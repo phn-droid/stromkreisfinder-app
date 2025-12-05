@@ -2,16 +2,12 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
-        android:id="@+id/menu_csv"
-        android:title="CSV laden" />
+        android:id="@+id/menu_back_to_main"
+        android:title="Zurück zur Suche" />
 
     <item
         android:id="@+id/menu_toggle_theme"
         android:title="Light/Dark umschalten" />
-
-    <item
-        android:id="@+id/menu_info"
-        android:title="Info" />
 
     <item
         android:id="@+id/menu_exit"
