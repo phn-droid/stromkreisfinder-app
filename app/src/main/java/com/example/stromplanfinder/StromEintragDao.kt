@@ -14,20 +14,52 @@ interface StromEintragDao {
     fun insertAll(eintraege: List<StromEintragEntity>)
 
     // Für die hierarchische Auswahl
-    @Query("SELECT DISTINCT etage FROM stromEintraege WHERE aktiv = 1 ORDER BY etage")
+
+    @Query(
+        """
+        SELECT DISTINCT etage 
+        FROM stromEintraege 
+        ORDER BY etage
+        """
+    )
     fun getEtagen(): List<String>
 
-    @Query("SELECT DISTINCT raum FROM stromEintraege WHERE aktiv = 1 AND etage = :etage ORDER BY raumnr")
+    @Query(
+        """
+        SELECT DISTINCT raum 
+        FROM stromEintraege 
+        WHERE etage = :etage 
+        ORDER BY raumnr
+        """
+    )
     fun getRaeume(etage: String): List<String>
 
-    @Query("SELECT DISTINCT verbraucher FROM stromEintraege WHERE aktiv = 1 AND etage = :etage AND raum = :raum ORDER BY verbraucher")
+    @Query(
+        """
+        SELECT DISTINCT verbraucher 
+        FROM stromEintraege 
+        WHERE etage = :etage 
+          AND raum = :raum 
+        ORDER BY verbraucher
+        """
+    )
     fun getVerbraucher(etage: String, raum: String): List<String>
 
     // Konkreten Eintrag finden
-    @Query("""
-        SELECT * FROM stromEintraege
-        WHERE aktiv = 1 AND etage = :etage AND raum = :raum AND verbraucher = :verbraucher
+
+    @Query(
+        """
+        SELECT * 
+        FROM stromEintraege 
+        WHERE etage = :etage 
+          AND raum = :raum 
+          AND verbraucher = :verbraucher 
         LIMIT 1
-    """)
-    fun findEintrag(etage: String, raum: String, verbraucher: String): StromEintragEntity?
+        """
+    )
+    fun findEintrag(
+        etage: String,
+        raum: String,
+        verbraucher: String
+    ): StromEintragEntity?
 }

@@ -1,6 +1,8 @@
 package com.example.stromplanfinder
 
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -45,6 +47,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var valueBemerkung: TextView
     private lateinit var textErgebnis: TextView
     private lateinit var statusText: TextView
+
+    // Standardfarbe für "Aktiv"-Text merken
+    private lateinit var aktivDefaultTextColors: ColorStateList
 
     // CSV-Auswahl
     private val csvPickerLauncher =
@@ -99,6 +104,9 @@ class MainActivity : AppCompatActivity() {
         textErgebnis = findViewById(R.id.textErgebnis)
         statusText = findViewById(R.id.statusText)
 
+        // Standard-Textfarbe von "Aktiv" merken (für Ja / Default-Zustand)
+        aktivDefaultTextColors = valueAktiv.textColors
+
         val buttonSuchen: MaterialButton = findViewById(R.id.buttonSuchen)
         val buttonMenu: MaterialButton = findViewById(R.id.buttonMenu)
 
@@ -106,29 +114,31 @@ class MainActivity : AppCompatActivity() {
         buttonMenu.setOnClickListener { view ->
             val popup = PopupMenu(this, view)
             popup.menuInflater.inflate(R.menu.main_menu, popup.menu)
-
             popup.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     R.id.menu_csv -> {
                         openCsvPicker()
                         true
                     }
+
                     R.id.menu_toggle_theme -> {
                         toggleTheme()
                         true
                     }
+
                     R.id.menu_info -> {
                         startActivity(Intent(this, InfoActivity::class.java))
                         true
                     }
+
                     R.id.menu_exit -> {
                         finishAffinity()
                         true
                     }
+
                     else -> false
                 }
             }
-
             popup.show()
         }
 
@@ -141,7 +151,9 @@ class MainActivity : AppCompatActivity() {
                 id: Long
             ) {
                 val etage = parent?.getItemAtPosition(position) as? String ?: return
-                lifecycleScope.launch { loadRaeume(etage) }
+                lifecycleScope.launch {
+                    loadRaeume(etage)
+                }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
@@ -156,7 +168,9 @@ class MainActivity : AppCompatActivity() {
             ) {
                 val etage = spinnerEtage.selectedItem as? String ?: return
                 val raum = parent?.getItemAtPosition(position) as? String ?: return
-                lifecycleScope.launch { loadVerbraucher(etage, raum) }
+                lifecycleScope.launch {
+                    loadVerbraucher(etage, raum)
+                }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
@@ -208,75 +222,84 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun importCsv(uri: Uri) {
         statusText.text = "CSV wird geladen ..."
+
         val entries = withContext(Dispatchers.IO) {
             val list = mutableListOf<StromEintragEntity>()
-            contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
-                val iter = lines.iterator()
-                if (iter.hasNext()) {
-                    iter.next() // Kopfzeile überspringen
-                }
-                while (iter.hasNext()) {
-                    val line = iter.next()
-                    if (line.isBlank()) continue
 
-                    val parts = line.split(';')
-                    if (parts.size < 13) continue
+            contentResolver.openInputStream(uri)
+                ?.bufferedReader()
+                ?.useLines { lines ->
+                    val iter = lines.iterator()
 
-                    // NEUE SPALTENREIHENFOLGE DER CSV:
-                    // 0: Etage
-                    // 1: Raumnr.
-                    // 2: Raum
-                    // 3: Phase
-                    // 4: Verbraucher
-                    // 5: FI
-                    // 6: LS
-                    // 7: Aktor
-                    // 8: Kanal
-                    // 9: Klemmblock
-                    // 10: Klemme
-                    // 11: Blatt
-                    // 12: Aktiv
-                    // 13: Bemerkungen
+                    // Kopfzeile überspringen
+                    if (iter.hasNext()) {
+                        iter.next()
+                    }
 
-                    val etage = parts[0].trim()
-                    val raumnr = parts[1].trim()
-                    val raum = parts[2].trim()
-                    val phase = parts[3].trim()
-                    val verbraucher = parts[4].trim()
-                    val fi = parts[5].trim()
-                    val ls = parts[6].trim()
-                    val aktor = parts[7].trim()
-                    val kanal = parts[8].trim()
-                    val block = parts[9].trim()
-                    val klemme = parts[10].trim()
-                    val blatt = parts[11].trim()
-                    val aktivString = parts[12].trim()
-                    val bemerkung = if (parts.size > 13) parts[13].trim() else ""
+                    while (iter.hasNext()) {
+                        val line = iter.next()
+                        if (line.isBlank()) continue
 
-                    val aktiv = aktivString.equals("ja", ignoreCase = true) ||
-                            aktivString == "1" ||
-                            aktivString.equals("true", ignoreCase = true)
+                        val parts = line.split(';')
+                        if (parts.size < 13) continue
 
-                    list.add(
-                        StromEintragEntity(
-                            etage = etage,
-                            raum = raum,
-                            verbraucher = verbraucher,
-                            raumnr = raumnr,
-                            phase = phase,
-                            fi = fi,
-                            ls = ls,
-                            aktor = aktor,
-                            kanal = kanal,
-                            klemmblock = block,
-                            klemme = klemme,
-                            blatt = blatt,
-                            aktiv = aktiv,
-                            bemerkungen = bemerkung
+                        // NEUE SPALTENREIHENFOLGE DER CSV:
+                        // 0: Etage
+                        // 1: Raumnr.
+                        // 2: Raum
+                        // 3: Phase
+                        // 4: Verbraucher
+                        // 5: FI
+                        // 6: LS
+                        // 7: Aktor
+                        // 8: Kanal
+                        // 9: Klemmblock
+                        // 10: Klemme
+                        // 11: Blatt
+                        // 12: Aktiv
+                        // 13: Bemerkungen
+
+                        val etage = parts[0].trim()
+                        val raumnr = parts[1].trim()
+                        val raum = parts[2].trim()
+                        val phase = parts[3].trim()
+                        val verbraucher = parts[4].trim()
+                        val fi = parts[5].trim()
+                        val ls = parts[6].trim()
+                        val aktor = parts[7].trim()
+                        val kanal = parts[8].trim()
+                        val block = parts[9].trim()
+                        val klemme = parts[10].trim()
+                        val blatt = parts[11].trim()
+                        val aktivString = parts[12].trim()
+                        val bemerkung = if (parts.size > 13) parts[13].trim() else ""
+
+                        val aktiv =
+                            aktivString.equals("ja", ignoreCase = true) ||
+                                    aktivString == "1" ||
+                                    aktivString.equals("true", ignoreCase = true)
+
+                        list.add(
+                            StromEintragEntity(
+                                etage = etage,
+                                raum = raum,
+                                verbraucher = verbraucher,
+                                raumnr = raumnr,
+                                phase = phase,
+                                fi = fi,
+                                ls = ls,
+                                aktor = aktor,
+                                kanal = kanal,
+                                klemmblock = block,
+                                klemme = klemme,
+                                blatt = blatt,
+                                aktiv = aktiv,
+                                bemerkungen = bemerkung
+                            )
                         )
-                    )
+                    }
                 }
-            }
+
             list
         }
 
@@ -294,7 +317,10 @@ class MainActivity : AppCompatActivity() {
     // --------------- DB-Abfragen für Spinner ---------------
 
     private suspend fun loadEtagen() {
-        val etagen = withContext(Dispatchers.IO) { dao.getEtagen() }
+        val etagen = withContext(Dispatchers.IO) {
+            dao.getEtagen()
+        }
+
         val adapter = ArrayAdapter(
             this,
             R.layout.spinner_item,
@@ -309,7 +335,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun loadRaeume(etage: String) {
-        val raeume = withContext(Dispatchers.IO) { dao.getRaeume(etage) }
+        val raeume = withContext(Dispatchers.IO) {
+            dao.getRaeume(etage)
+        }
+
         val adapter = ArrayAdapter(
             this,
             R.layout.spinner_item,
@@ -330,6 +359,7 @@ class MainActivity : AppCompatActivity() {
         val verbraucherList = withContext(Dispatchers.IO) {
             dao.getVerbraucher(etage, raum)
         }
+
         val adapter = ArrayAdapter(
             this,
             R.layout.spinner_item,
@@ -348,8 +378,7 @@ class MainActivity : AppCompatActivity() {
         showResult(eintrag)
     }
 
-    private fun String?.orDash(): String =
-        if (this.isNullOrBlank()) "-" else this
+    private fun String?.orDash(): String = if (this.isNullOrBlank()) "-" else this
 
     private fun showResult(e: StromEintragEntity?) {
         if (e == null) {
@@ -365,6 +394,9 @@ class MainActivity : AppCompatActivity() {
             valueAktiv.text = "-"
             valueBemerkung.text = "-"
             textErgebnis.text = "Kein Stromkreis gefunden."
+
+            // sicherstellen, dass wir nicht versehentlich in Rot stehen bleiben
+            valueAktiv.setTextColor(aktivDefaultTextColors)
             return
         }
 
@@ -377,8 +409,16 @@ class MainActivity : AppCompatActivity() {
         valueKlemme.text = e.klemme.orDash()
         valueRaumnr.text = e.raumnr.orDash()
         valueBlatt.text = e.blatt.orDash()
-        valueAktiv.text = if (e.aktiv) "Ja" else "Nein"
         valueBemerkung.text = e.bemerkungen.orDash()
+
+        // Aktiv-Text + Farbe
+        if (e.aktiv) {
+            valueAktiv.text = "Ja"
+            valueAktiv.setTextColor(aktivDefaultTextColors)
+        } else {
+            valueAktiv.text = "Nein"
+            valueAktiv.setTextColor(Color.RED)
+        }
 
         textErgebnis.text = "Stromkreis gefunden."
     }
