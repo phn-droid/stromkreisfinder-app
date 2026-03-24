@@ -25,7 +25,8 @@ class MainActivity : AppCompatActivity() {
 
     private enum class ActiveView {
         STROMKREISSUCHE,
-        VERBRAUCHERSUCHE
+        VERBRAUCHERSUCHE,
+        RAUMSUCHE
     }
 
     companion object {
@@ -43,8 +44,10 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var panelResultStromkreis: View
     private lateinit var panelResultVerbraucher: View
+    private lateinit var panelResultRaum: View
     private lateinit var panelSearchStromkreis: View
     private lateinit var panelSearchVerbraucher: View
+    private lateinit var panelSearchRaum: View
 
     // UI – Stromkreissuche
     private lateinit var spinnerEtage: Spinner
@@ -70,6 +73,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var buttonVerbraucherSuchen: MaterialButton
     private lateinit var textErgebnisVerbrauchersuche: TextView
     private lateinit var valueVerbraucherSucheErgebnis: TextView
+
+    // UI – Raumsuche
+    private lateinit var spinnerFiRaumsuche: Spinner
+    private lateinit var spinnerLsRaumsuche: Spinner
+    private lateinit var buttonRaumSuchen: MaterialButton
+    private lateinit var textErgebnisRaumsuche: TextView
+    private lateinit var valueRaumSucheErgebnis: TextView
 
     // Standardfarbe für "Aktiv"-Text merken
     private lateinit var aktivDefaultTextColors: ColorStateList
@@ -116,11 +126,13 @@ class MainActivity : AppCompatActivity() {
 
         clearStromkreisResult()
         clearVerbraucherResult()
+        clearRaumResult()
         switchView(activeView)
 
         lifecycleScope.launch {
             loadEtagen()
             loadAktoren()
+            loadFis()
         }
     }
 
@@ -136,8 +148,10 @@ class MainActivity : AppCompatActivity() {
 
         panelResultStromkreis = findViewById(R.id.panelResultStromkreis)
         panelResultVerbraucher = findViewById(R.id.panelResultVerbraucher)
+        panelResultRaum = findViewById(R.id.panelResultRaum)
         panelSearchStromkreis = findViewById(R.id.panelSearchStromkreis)
         panelSearchVerbraucher = findViewById(R.id.panelSearchVerbraucher)
+        panelSearchRaum = findViewById(R.id.panelSearchRaum)
 
         spinnerEtage = findViewById(R.id.spinnerEtage)
         spinnerRaum = findViewById(R.id.spinnerRaum)
@@ -162,6 +176,12 @@ class MainActivity : AppCompatActivity() {
         textErgebnisVerbrauchersuche = findViewById(R.id.textErgebnisVerbrauchersuche)
         valueVerbraucherSucheErgebnis = findViewById(R.id.valueVerbraucherSucheErgebnis)
 
+        spinnerFiRaumsuche = findViewById(R.id.spinnerFiRaumsuche)
+        spinnerLsRaumsuche = findViewById(R.id.spinnerLsRaumsuche)
+        buttonRaumSuchen = findViewById(R.id.buttonRaumSuchen)
+        textErgebnisRaumsuche = findViewById(R.id.textErgebnisRaumsuche)
+        valueRaumSucheErgebnis = findViewById(R.id.valueRaumSucheErgebnis)
+
         aktivDefaultTextColors = valueAktiv.textColors
     }
 
@@ -179,6 +199,11 @@ class MainActivity : AppCompatActivity() {
 
                     R.id.menu_verbrauchersuche -> {
                         switchView(ActiveView.VERBRAUCHERSUCHE)
+                        true
+                    }
+
+                    R.id.menu_raumsuche -> {
+                        switchView(ActiveView.RAUMSUCHE)
                         true
                     }
 
@@ -259,6 +284,22 @@ class MainActivity : AppCompatActivity() {
 
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
         }
+
+        spinnerFiRaumsuche.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                val fi = parent?.getItemAtPosition(position) as? String ?: return
+                lifecycleScope.launch {
+                    loadLsForFi(fi)
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
     }
 
     private fun setupButtons() {
@@ -298,6 +339,23 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        buttonRaumSuchen.setOnClickListener {
+            val fi = spinnerFiRaumsuche.selectedItem as? String
+            val ls = spinnerLsRaumsuche.selectedItem as? String
+
+            if (fi.isNullOrBlank() || ls.isNullOrBlank()) {
+                Toast.makeText(
+                    this,
+                    "Bitte FI und LS auswählen.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                lifecycleScope.launch {
+                    searchRaeume(fi, ls)
+                }
+            }
+        }
     }
 
     private fun switchView(view: ActiveView) {
@@ -308,16 +366,36 @@ class MainActivity : AppCompatActivity() {
                 textCurrentView.text = "Stromkreissuche"
                 panelResultStromkreis.visibility = View.VISIBLE
                 panelSearchStromkreis.visibility = View.VISIBLE
+
                 panelResultVerbraucher.visibility = View.GONE
                 panelSearchVerbraucher.visibility = View.GONE
+
+                panelResultRaum.visibility = View.GONE
+                panelSearchRaum.visibility = View.GONE
             }
 
             ActiveView.VERBRAUCHERSUCHE -> {
                 textCurrentView.text = "Verbrauchersuche"
                 panelResultStromkreis.visibility = View.GONE
                 panelSearchStromkreis.visibility = View.GONE
+
                 panelResultVerbraucher.visibility = View.VISIBLE
                 panelSearchVerbraucher.visibility = View.VISIBLE
+
+                panelResultRaum.visibility = View.GONE
+                panelSearchRaum.visibility = View.GONE
+            }
+
+            ActiveView.RAUMSUCHE -> {
+                textCurrentView.text = "Raumsuche"
+                panelResultStromkreis.visibility = View.GONE
+                panelSearchStromkreis.visibility = View.GONE
+
+                panelResultVerbraucher.visibility = View.GONE
+                panelSearchVerbraucher.visibility = View.GONE
+
+                panelResultRaum.visibility = View.VISIBLE
+                panelSearchRaum.visibility = View.VISIBLE
             }
         }
     }
@@ -414,9 +492,11 @@ class MainActivity : AppCompatActivity() {
 
         clearStromkreisResult()
         clearVerbraucherResult()
+        clearRaumResult()
 
         loadEtagen()
         loadAktoren()
+        loadFis()
     }
 
     private suspend fun loadEtagen() {
@@ -465,6 +545,22 @@ class MainActivity : AppCompatActivity() {
         setSpinnerItems(spinnerKanalVerbrauchersuche, kanaele)
     }
 
+    private suspend fun loadFis() {
+        val fis = withContext(Dispatchers.IO) { dao.getFis() }
+        setSpinnerItems(spinnerFiRaumsuche, fis)
+
+        if (fis.isNotEmpty()) {
+            loadLsForFi(fis.first())
+        } else {
+            clearSpinner(spinnerLsRaumsuche)
+        }
+    }
+
+    private suspend fun loadLsForFi(fi: String) {
+        val lsList = withContext(Dispatchers.IO) { dao.getLsForFi(fi) }
+        setSpinnerItems(spinnerLsRaumsuche, lsList)
+    }
+
     private fun setSpinnerItems(spinner: Spinner, items: List<String>) {
         val adapter = ArrayAdapter(this, R.layout.spinner_item, items)
         adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
@@ -496,6 +592,18 @@ class MainActivity : AppCompatActivity() {
             showNoVerbraucherFound()
         } else {
             showVerbraucherResult(eintraege)
+        }
+    }
+
+    private suspend fun searchRaeume(fi: String, ls: String) {
+        val eintraege = withContext(Dispatchers.IO) {
+            dao.findEintraegeByFiLs(fi, ls)
+        }
+
+        if (eintraege.isEmpty()) {
+            showNoRaeumeFound()
+        } else {
+            showRaumResult(eintraege)
         }
     }
 
@@ -583,6 +691,37 @@ class MainActivity : AppCompatActivity() {
 
                 append(" | ")
                 append(eintrag.verbraucher.orDash())
+            }
+        }
+    }
+
+    private fun clearRaumResult() {
+        textErgebnisRaumsuche.text = "Bitte Auswahl treffen und auf Suchen tippen."
+        valueRaumSucheErgebnis.text = "-"
+    }
+
+    private fun showNoRaeumeFound() {
+        textErgebnisRaumsuche.text = "Keine Räume gefunden."
+        valueRaumSucheErgebnis.text = "-"
+    }
+
+    private fun showRaumResult(eintraege: List<StromEintragEntity>) {
+        val eindeutigeRaeume = eintraege
+            .distinctBy { "${it.etage}|${it.raumnr}|${it.raum}" }
+
+        textErgebnisRaumsuche.text = "${eindeutigeRaeume.size} Räume gefunden."
+
+        valueRaumSucheErgebnis.text = eindeutigeRaeume.joinToString("\n") { eintrag ->
+            buildString {
+                append(eintrag.etage.orDash())
+                append(" | ")
+                append(eintrag.raum.orDash())
+
+                if (!eintrag.raumnr.isNullOrBlank()) {
+                    append(" (")
+                    append(eintrag.raumnr)
+                    append(")")
+                }
             }
         }
     }

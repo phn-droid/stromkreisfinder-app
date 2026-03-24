@@ -10,6 +10,10 @@
         android:title="Verbrauchersuche" />
 
     <item
+        android:id="@+id/menu_raumsuche"
+        android:title="Raumsuche" />
+
+    <item
         android:id="@+id/menu_csv"
         android:title="CSV laden" />
 

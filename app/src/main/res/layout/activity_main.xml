@@ -12,15 +12,15 @@
         android:id="@+id/topBar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
         android:gravity="center_vertical"
+        android:orientation="horizontal"
         android:paddingStart="16dp"
         android:paddingTop="32dp"
         android:paddingEnd="16dp"
         android:paddingBottom="8dp"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
+        app:layout_constraintTop_toTopOf="parent">
 
         <ImageView
             android:id="@+id/imageLogo"
@@ -73,9 +73,9 @@
         android:paddingTop="8dp"
         android:paddingEnd="16dp"
         android:paddingBottom="16dp"
-        app:layout_constraintTop_toBottomOf="@id/topBar"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
+        app:layout_constraintTop_toBottomOf="@id/topBar">
 
         <LinearLayout
             android:id="@+id/panelResultStromkreis"
@@ -455,6 +455,40 @@
                 android:textSize="14sp" />
         </LinearLayout>
 
+        <LinearLayout
+            android:id="@+id/panelResultRaum"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="Räume"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/valueRaumSucheErgebnis"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="120dp"
+                android:text="-"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textIsSelectable="true"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/textErgebnisRaumsuche"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Bitte Auswahl treffen und auf Suchen tippen."
+                android:textSize="14sp" />
+        </LinearLayout>
+
         <TextView
             android:id="@+id/statusText"
             android:layout_width="match_parent"
@@ -470,10 +504,10 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:fillViewport="true"
-        app:layout_constraintTop_toBottomOf="@id/resultContainer"
         app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
+        app:layout_constraintTop_toBottomOf="@id/resultContainer">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -581,6 +615,53 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/buttonVerbraucherSuchen"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Suchen"
+                    android:textAllCaps="false"
+                    app:icon="@android:drawable/ic_menu_search"
+                    app:iconGravity="textStart"
+                    app:iconPadding="8dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/panelSearchRaum"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="4dp"
+                    android:text="FI"
+                    android:textSize="16sp" />
+
+                <Spinner
+                    android:id="@+id/spinnerFiRaumsuche"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:background="@drawable/spinner_background" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="4dp"
+                    android:text="LS"
+                    android:textSize="16sp" />
+
+                <Spinner
+                    android:id="@+id/spinnerLsRaumsuche"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="24dp"
+                    android:background="@drawable/spinner_background" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/buttonRaumSuchen"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"

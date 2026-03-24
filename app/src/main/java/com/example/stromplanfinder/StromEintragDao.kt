@@ -66,6 +66,27 @@ interface StromEintragDao {
 
     @Query(
         """
+        SELECT DISTINCT fi
+        FROM stromEintraege
+        WHERE TRIM(fi) <> ''
+        ORDER BY fi
+        """
+    )
+    fun getFis(): List<String>
+
+    @Query(
+        """
+        SELECT DISTINCT ls
+        FROM stromEintraege
+        WHERE fi = :fi
+          AND TRIM(ls) <> ''
+        ORDER BY ls
+        """
+    )
+    fun getLsForFi(fi: String): List<String>
+
+    @Query(
+        """
         SELECT *
         FROM stromEintraege
         WHERE etage = :etage
@@ -92,5 +113,19 @@ interface StromEintragDao {
     fun findEintraegeByAktorKanal(
         aktor: String,
         kanal: String
+    ): List<StromEintragEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM stromEintraege
+        WHERE fi = :fi
+          AND ls = :ls
+        ORDER BY etage, raumnr, raum, verbraucher
+        """
+    )
+    fun findEintraegeByFiLs(
+        fi: String,
+        ls: String
     ): List<StromEintragEntity>
 }
