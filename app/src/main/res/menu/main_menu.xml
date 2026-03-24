@@ -2,6 +2,14 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
+        android:id="@+id/menu_stromkreissuche"
+        android:title="Stromkreissuche" />
+
+    <item
+        android:id="@+id/menu_verbrauchersuche"
+        android:title="Verbrauchersuche" />
+
+    <item
         android:id="@+id/menu_csv"
         android:title="CSV laden" />
 

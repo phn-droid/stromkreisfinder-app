@@ -16,7 +16,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.PopupMenu
 import androidx.lifecycle.lifecycleScope
-import androidx.room.Room
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -24,16 +23,34 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
+    private enum class ActiveView {
+        STROMKREISSUCHE,
+        VERBRAUCHERSUCHE
+    }
+
+    companion object {
+        private const val KEY_ACTIVE_VIEW = "active_view"
+    }
+
     // Room
     private lateinit var db: StromplanDatenbank
     private lateinit var dao: StromEintragDao
 
-    // UI – Spinner
+    // Allgemeine UI
+    private lateinit var buttonMenu: MaterialButton
+    private lateinit var textCurrentView: TextView
+    private lateinit var statusText: TextView
+
+    private lateinit var panelResultStromkreis: View
+    private lateinit var panelResultVerbraucher: View
+    private lateinit var panelSearchStromkreis: View
+    private lateinit var panelSearchVerbraucher: View
+
+    // UI – Stromkreissuche
     private lateinit var spinnerEtage: Spinner
     private lateinit var spinnerRaum: Spinner
     private lateinit var spinnerVerbraucher: Spinner
 
-    // UI – Ergebnisfelder
     private lateinit var valueFi: TextView
     private lateinit var valueSicherung: TextView
     private lateinit var valueAktor: TextView
@@ -46,10 +63,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var valueAktiv: TextView
     private lateinit var valueBemerkung: TextView
     private lateinit var textErgebnis: TextView
-    private lateinit var statusText: TextView
+
+    // UI – Verbrauchersuche
+    private lateinit var spinnerAktor: Spinner
+    private lateinit var spinnerKanalVerbrauchersuche: Spinner
+    private lateinit var buttonVerbraucherSuchen: MaterialButton
+    private lateinit var textErgebnisVerbrauchersuche: TextView
+    private lateinit var valueVerbraucherSucheErgebnis: TextView
 
     // Standardfarbe für "Aktiv"-Text merken
     private lateinit var aktivDefaultTextColors: ColorStateList
+
+    private var activeView: ActiveView = ActiveView.STROMKREISSUCHE
 
     // CSV-Auswahl
     private val csvPickerLauncher =
@@ -66,7 +91,6 @@ class MainActivity : AppCompatActivity() {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Theme aus Einstellungen holen
         val prefs = getSharedPreferences("settings", MODE_PRIVATE)
         val darkModeOn = prefs.getBoolean("dark_mode", false)
         AppCompatDelegate.setDefaultNightMode(
@@ -77,15 +101,44 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // DB initialisieren
-        db = Room.databaseBuilder(
-            applicationContext,
-            StromplanDatenbank::class.java,
-            "stromplan.db"
-        ).build()
+        activeView = savedInstanceState
+            ?.getString(KEY_ACTIVE_VIEW)
+            ?.let { saved -> runCatching { ActiveView.valueOf(saved) }.getOrNull() }
+            ?: ActiveView.STROMKREISSUCHE
+
+        db = StromplanDatenbank.getInstance(applicationContext)
         dao = db.stromEintragDao()
 
-        // Views holen
+        bindViews()
+        setupMenu()
+        setupSpinnerCallbacks()
+        setupButtons()
+
+        clearStromkreisResult()
+        clearVerbraucherResult()
+        switchView(activeView)
+
+        lifecycleScope.launch {
+            loadEtagen()
+            loadAktoren()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(KEY_ACTIVE_VIEW, activeView.name)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun bindViews() {
+        buttonMenu = findViewById(R.id.buttonMenu)
+        textCurrentView = findViewById(R.id.textCurrentView)
+        statusText = findViewById(R.id.statusText)
+
+        panelResultStromkreis = findViewById(R.id.panelResultStromkreis)
+        panelResultVerbraucher = findViewById(R.id.panelResultVerbraucher)
+        panelSearchStromkreis = findViewById(R.id.panelSearchStromkreis)
+        panelSearchVerbraucher = findViewById(R.id.panelSearchVerbraucher)
+
         spinnerEtage = findViewById(R.id.spinnerEtage)
         spinnerRaum = findViewById(R.id.spinnerRaum)
         spinnerVerbraucher = findViewById(R.id.spinnerVerbraucher)
@@ -102,20 +155,33 @@ class MainActivity : AppCompatActivity() {
         valueAktiv = findViewById(R.id.valueAktiv)
         valueBemerkung = findViewById(R.id.valueBemerkung)
         textErgebnis = findViewById(R.id.textErgebnis)
-        statusText = findViewById(R.id.statusText)
 
-        // Standard-Textfarbe von "Aktiv" merken (für Ja / Default-Zustand)
+        spinnerAktor = findViewById(R.id.spinnerAktor)
+        spinnerKanalVerbrauchersuche = findViewById(R.id.spinnerKanalVerbrauchersuche)
+        buttonVerbraucherSuchen = findViewById(R.id.buttonVerbraucherSuchen)
+        textErgebnisVerbrauchersuche = findViewById(R.id.textErgebnisVerbrauchersuche)
+        valueVerbraucherSucheErgebnis = findViewById(R.id.valueVerbraucherSucheErgebnis)
+
         aktivDefaultTextColors = valueAktiv.textColors
+    }
 
-        val buttonSuchen: MaterialButton = findViewById(R.id.buttonSuchen)
-        val buttonMenu: MaterialButton = findViewById(R.id.buttonMenu)
-
-        // Burgermenü
+    private fun setupMenu() {
         buttonMenu.setOnClickListener { view ->
             val popup = PopupMenu(this, view)
             popup.menuInflater.inflate(R.menu.main_menu, popup.menu)
+
             popup.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
+                    R.id.menu_stromkreissuche -> {
+                        switchView(ActiveView.STROMKREISSUCHE)
+                        true
+                    }
+
+                    R.id.menu_verbrauchersuche -> {
+                        switchView(ActiveView.VERBRAUCHERSUCHE)
+                        true
+                    }
+
                     R.id.menu_csv -> {
                         openCsvPicker()
                         true
@@ -141,8 +207,9 @@ class MainActivity : AppCompatActivity() {
             }
             popup.show()
         }
+    }
 
-        // Spinner-Callbacks
+    private fun setupSpinnerCallbacks() {
         spinnerEtage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -168,6 +235,7 @@ class MainActivity : AppCompatActivity() {
             ) {
                 val etage = spinnerEtage.selectedItem as? String ?: return
                 val raum = parent?.getItemAtPosition(position) as? String ?: return
+
                 lifecycleScope.launch {
                     loadVerbraucher(etage, raum)
                 }
@@ -175,6 +243,26 @@ class MainActivity : AppCompatActivity() {
 
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
         }
+
+        spinnerAktor.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                val aktor = parent?.getItemAtPosition(position) as? String ?: return
+                lifecycleScope.launch {
+                    loadKanaele(aktor)
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+    }
+
+    private fun setupButtons() {
+        val buttonSuchen: MaterialButton = findViewById(R.id.buttonSuchen)
 
         buttonSuchen.setOnClickListener {
             val etage = spinnerEtage.selectedItem as? String
@@ -194,13 +282,45 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Beim Start Etagen laden
-        lifecycleScope.launch {
-            loadEtagen()
+        buttonVerbraucherSuchen.setOnClickListener {
+            val aktor = spinnerAktor.selectedItem as? String
+            val kanal = spinnerKanalVerbrauchersuche.selectedItem as? String
+
+            if (aktor.isNullOrBlank() || kanal.isNullOrBlank()) {
+                Toast.makeText(
+                    this,
+                    "Bitte Aktor und Kanal auswählen.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                lifecycleScope.launch {
+                    searchVerbraucher(aktor, kanal)
+                }
+            }
         }
     }
 
-    // ---------------- Theme-Umschalter ----------------
+    private fun switchView(view: ActiveView) {
+        activeView = view
+
+        when (view) {
+            ActiveView.STROMKREISSUCHE -> {
+                textCurrentView.text = "Stromkreissuche"
+                panelResultStromkreis.visibility = View.VISIBLE
+                panelSearchStromkreis.visibility = View.VISIBLE
+                panelResultVerbraucher.visibility = View.GONE
+                panelSearchVerbraucher.visibility = View.GONE
+            }
+
+            ActiveView.VERBRAUCHERSUCHE -> {
+                textCurrentView.text = "Verbrauchersuche"
+                panelResultStromkreis.visibility = View.GONE
+                panelSearchStromkreis.visibility = View.GONE
+                panelResultVerbraucher.visibility = View.VISIBLE
+                panelSearchVerbraucher.visibility = View.VISIBLE
+            }
+        }
+    }
 
     private fun toggleTheme() {
         val prefs = getSharedPreferences("settings", MODE_PRIVATE)
@@ -213,8 +333,6 @@ class MainActivity : AppCompatActivity() {
             else AppCompatDelegate.MODE_NIGHT_NO
         )
     }
-
-    // ---------------- CSV-Auswahl & Import ----------------
 
     private fun openCsvPicker() {
         csvPickerLauncher.launch(arrayOf("text/*", "application/octet-stream", "*/*"))
@@ -231,7 +349,6 @@ class MainActivity : AppCompatActivity() {
                 ?.useLines { lines ->
                     val iter = lines.iterator()
 
-                    // Kopfzeile überspringen
                     if (iter.hasNext()) {
                         iter.next()
                     }
@@ -242,22 +359,6 @@ class MainActivity : AppCompatActivity() {
 
                         val parts = line.split(';')
                         if (parts.size < 13) continue
-
-                        // NEUE SPALTENREIHENFOLGE DER CSV:
-                        // 0: Etage
-                        // 1: Raumnr.
-                        // 2: Raum
-                        // 3: Phase
-                        // 4: Verbraucher
-                        // 5: FI
-                        // 6: LS
-                        // 7: Aktor
-                        // 8: Kanal
-                        // 9: Klemmblock
-                        // 10: Klemme
-                        // 11: Blatt
-                        // 12: Aktiv
-                        // 13: Bemerkungen
 
                         val etage = parts[0].trim()
                         val raumnr = parts[1].trim()
@@ -274,18 +375,17 @@ class MainActivity : AppCompatActivity() {
                         val aktivString = parts[12].trim()
                         val bemerkung = if (parts.size > 13) parts[13].trim() else ""
 
-                        val aktiv =
-                            aktivString.equals("ja", ignoreCase = true) ||
-                                    aktivString == "1" ||
-                                    aktivString.equals("true", ignoreCase = true)
+                        val aktiv = aktivString.equals("ja", ignoreCase = true) ||
+                                aktivString == "1" ||
+                                aktivString.equals("true", ignoreCase = true)
 
                         list.add(
                             StromEintragEntity(
                                 etage = etage,
-                                raum = raum,
-                                verbraucher = verbraucher,
                                 raumnr = raumnr,
+                                raum = raum,
                                 phase = phase,
+                                verbraucher = verbraucher,
                                 fi = fi,
                                 ls = ls,
                                 aktor = aktor,
@@ -311,47 +411,34 @@ class MainActivity : AppCompatActivity() {
         }
 
         statusText.text = "Daten aus CSV geladen (${entries.size} Einträge)."
+
+        clearStromkreisResult()
+        clearVerbraucherResult()
+
         loadEtagen()
+        loadAktoren()
     }
 
-    // --------------- DB-Abfragen für Spinner ---------------
-
     private suspend fun loadEtagen() {
-        val etagen = withContext(Dispatchers.IO) {
-            dao.getEtagen()
-        }
-
-        val adapter = ArrayAdapter(
-            this,
-            R.layout.spinner_item,
-            etagen
-        )
-        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
-        spinnerEtage.adapter = adapter
+        val etagen = withContext(Dispatchers.IO) { dao.getEtagen() }
+        setSpinnerItems(spinnerEtage, etagen)
 
         if (etagen.isNotEmpty()) {
-            loadRaeume(etagen[0])
+            loadRaeume(etagen.first())
+        } else {
+            clearSpinner(spinnerRaum)
+            clearSpinner(spinnerVerbraucher)
         }
     }
 
     private suspend fun loadRaeume(etage: String) {
-        val raeume = withContext(Dispatchers.IO) {
-            dao.getRaeume(etage)
-        }
-
-        val adapter = ArrayAdapter(
-            this,
-            R.layout.spinner_item,
-            raeume
-        )
-        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
-        spinnerRaum.adapter = adapter
+        val raeume = withContext(Dispatchers.IO) { dao.getRaeume(etage) }
+        setSpinnerItems(spinnerRaum, raeume)
 
         if (raeume.isNotEmpty()) {
-            loadVerbraucher(etage, raeume[0])
+            loadVerbraucher(etage, raeume.first())
         } else {
-            spinnerVerbraucher.adapter =
-                ArrayAdapter(this, R.layout.spinner_item, emptyList<String>())
+            clearSpinner(spinnerVerbraucher)
         }
     }
 
@@ -359,47 +446,94 @@ class MainActivity : AppCompatActivity() {
         val verbraucherList = withContext(Dispatchers.IO) {
             dao.getVerbraucher(etage, raum)
         }
-
-        val adapter = ArrayAdapter(
-            this,
-            R.layout.spinner_item,
-            verbraucherList
-        )
-        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
-        spinnerVerbraucher.adapter = adapter
+        setSpinnerItems(spinnerVerbraucher, verbraucherList)
     }
 
-    // --------------- Suche & Ergebnisanzeige ---------------
+    private suspend fun loadAktoren() {
+        val aktoren = withContext(Dispatchers.IO) { dao.getAktoren() }
+        setSpinnerItems(spinnerAktor, aktoren)
+
+        if (aktoren.isNotEmpty()) {
+            loadKanaele(aktoren.first())
+        } else {
+            clearSpinner(spinnerKanalVerbrauchersuche)
+        }
+    }
+
+    private suspend fun loadKanaele(aktor: String) {
+        val kanaele = withContext(Dispatchers.IO) { dao.getKanaele(aktor) }
+        setSpinnerItems(spinnerKanalVerbrauchersuche, kanaele)
+    }
+
+    private fun setSpinnerItems(spinner: Spinner, items: List<String>) {
+        val adapter = ArrayAdapter(this, R.layout.spinner_item, items)
+        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
+        spinner.adapter = adapter
+    }
+
+    private fun clearSpinner(spinner: Spinner) {
+        setSpinnerItems(spinner, emptyList())
+    }
 
     private suspend fun searchStromkreis(etage: String, raum: String, verbraucher: String) {
         val eintrag = withContext(Dispatchers.IO) {
             dao.findEintrag(etage, raum, verbraucher)
         }
-        showResult(eintrag)
+
+        if (eintrag == null) {
+            showNoStromkreisFound()
+        } else {
+            showStromkreisResult(eintrag)
+        }
+    }
+
+    private suspend fun searchVerbraucher(aktor: String, kanal: String) {
+        val eintraege = withContext(Dispatchers.IO) {
+            dao.findEintraegeByAktorKanal(aktor, kanal)
+        }
+
+        if (eintraege.isEmpty()) {
+            showNoVerbraucherFound()
+        } else {
+            showVerbraucherResult(eintraege)
+        }
     }
 
     private fun String?.orDash(): String = if (this.isNullOrBlank()) "-" else this
 
-    private fun showResult(e: StromEintragEntity?) {
-        if (e == null) {
-            valueFi.text = "-"
-            valueSicherung.text = "-"
-            valueAktor.text = "-"
-            valueKanal.text = "-"
-            valuePhase.text = "-"
-            valueBlock.text = "-"
-            valueKlemme.text = "-"
-            valueRaumnr.text = "-"
-            valueBlatt.text = "-"
-            valueAktiv.text = "-"
-            valueBemerkung.text = "-"
-            textErgebnis.text = "Kein Stromkreis gefunden."
+    private fun clearStromkreisResult() {
+        valueFi.text = "-"
+        valueSicherung.text = "-"
+        valueAktor.text = "-"
+        valueKanal.text = "-"
+        valuePhase.text = "-"
+        valueBlock.text = "-"
+        valueKlemme.text = "-"
+        valueRaumnr.text = "-"
+        valueBlatt.text = "-"
+        valueAktiv.text = "-"
+        valueBemerkung.text = "-"
+        valueAktiv.setTextColor(aktivDefaultTextColors)
+        textErgebnis.text = "Bitte Auswahl treffen und auf Suchen tippen."
+    }
 
-            // sicherstellen, dass wir nicht versehentlich in Rot stehen bleiben
-            valueAktiv.setTextColor(aktivDefaultTextColors)
-            return
-        }
+    private fun showNoStromkreisFound() {
+        valueFi.text = "-"
+        valueSicherung.text = "-"
+        valueAktor.text = "-"
+        valueKanal.text = "-"
+        valuePhase.text = "-"
+        valueBlock.text = "-"
+        valueKlemme.text = "-"
+        valueRaumnr.text = "-"
+        valueBlatt.text = "-"
+        valueAktiv.text = "-"
+        valueBemerkung.text = "-"
+        valueAktiv.setTextColor(aktivDefaultTextColors)
+        textErgebnis.text = "Kein Stromkreis gefunden."
+    }
 
+    private fun showStromkreisResult(e: StromEintragEntity) {
         valueFi.text = e.fi.orDash()
         valueSicherung.text = e.ls.orDash()
         valueAktor.text = e.aktor.orDash()
@@ -411,7 +545,6 @@ class MainActivity : AppCompatActivity() {
         valueBlatt.text = e.blatt.orDash()
         valueBemerkung.text = e.bemerkungen.orDash()
 
-        // Aktiv-Text + Farbe
         if (e.aktiv) {
             valueAktiv.text = "Ja"
             valueAktiv.setTextColor(aktivDefaultTextColors)
@@ -421,5 +554,36 @@ class MainActivity : AppCompatActivity() {
         }
 
         textErgebnis.text = "Stromkreis gefunden."
+    }
+
+    private fun clearVerbraucherResult() {
+        textErgebnisVerbrauchersuche.text = "Bitte Auswahl treffen und auf Suchen tippen."
+        valueVerbraucherSucheErgebnis.text = "-"
+    }
+
+    private fun showNoVerbraucherFound() {
+        textErgebnisVerbrauchersuche.text = "Keine Verbraucher gefunden."
+        valueVerbraucherSucheErgebnis.text = "-"
+    }
+
+    private fun showVerbraucherResult(eintraege: List<StromEintragEntity>) {
+        textErgebnisVerbrauchersuche.text = "${eintraege.size} Treffer gefunden."
+
+        valueVerbraucherSucheErgebnis.text = eintraege.joinToString("\n") { eintrag ->
+            buildString {
+                append(eintrag.etage.orDash())
+                append(" | ")
+                append(eintrag.raum.orDash())
+
+                if (!eintrag.raumnr.isNullOrBlank()) {
+                    append(" (")
+                    append(eintrag.raumnr)
+                    append(")")
+                }
+
+                append(" | ")
+                append(eintrag.verbraucher.orDash())
+            }
+        }
     }
 }

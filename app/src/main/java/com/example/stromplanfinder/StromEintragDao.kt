@@ -13,12 +13,10 @@ interface StromEintragDao {
     @Insert
     fun insertAll(eintraege: List<StromEintragEntity>)
 
-    // Für die hierarchische Auswahl
-
     @Query(
         """
-        SELECT DISTINCT etage 
-        FROM stromEintraege 
+        SELECT DISTINCT etage
+        FROM stromEintraege
         ORDER BY etage
         """
     )
@@ -26,9 +24,9 @@ interface StromEintragDao {
 
     @Query(
         """
-        SELECT DISTINCT raum 
-        FROM stromEintraege 
-        WHERE etage = :etage 
+        SELECT DISTINCT raum
+        FROM stromEintraege
+        WHERE etage = :etage
         ORDER BY raumnr
         """
     )
@@ -36,24 +34,43 @@ interface StromEintragDao {
 
     @Query(
         """
-        SELECT DISTINCT verbraucher 
-        FROM stromEintraege 
-        WHERE etage = :etage 
-          AND raum = :raum 
+        SELECT DISTINCT verbraucher
+        FROM stromEintraege
+        WHERE etage = :etage
+          AND raum = :raum
         ORDER BY verbraucher
         """
     )
     fun getVerbraucher(etage: String, raum: String): List<String>
 
-    // Konkreten Eintrag finden
+    @Query(
+        """
+        SELECT DISTINCT aktor
+        FROM stromEintraege
+        WHERE TRIM(aktor) <> ''
+        ORDER BY aktor
+        """
+    )
+    fun getAktoren(): List<String>
 
     @Query(
         """
-        SELECT * 
-        FROM stromEintraege 
-        WHERE etage = :etage 
-          AND raum = :raum 
-          AND verbraucher = :verbraucher 
+        SELECT DISTINCT kanal
+        FROM stromEintraege
+        WHERE aktor = :aktor
+          AND TRIM(kanal) <> ''
+        ORDER BY kanal
+        """
+    )
+    fun getKanaele(aktor: String): List<String>
+
+    @Query(
+        """
+        SELECT *
+        FROM stromEintraege
+        WHERE etage = :etage
+          AND raum = :raum
+          AND verbraucher = :verbraucher
         LIMIT 1
         """
     )
@@ -62,4 +79,18 @@ interface StromEintragDao {
         raum: String,
         verbraucher: String
     ): StromEintragEntity?
+
+    @Query(
+        """
+        SELECT *
+        FROM stromEintraege
+        WHERE aktor = :aktor
+          AND kanal = :kanal
+        ORDER BY etage, raumnr, verbraucher
+        """
+    )
+    fun findEintraegeByAktorKanal(
+        aktor: String,
+        kanal: String
+    ): List<StromEintragEntity>
 }
