@@ -26,7 +26,8 @@ class MainActivity : AppCompatActivity() {
     private enum class ActiveView {
         STROMKREISSUCHE,
         VERBRAUCHERSUCHE,
-        RAUMSUCHE
+        RAUMSUCHE,
+        LEITUNGSSUCHE
     }
 
     companion object {
@@ -45,9 +46,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var panelResultStromkreis: View
     private lateinit var panelResultVerbraucher: View
     private lateinit var panelResultRaum: View
+    private lateinit var panelResultLeitung: View
     private lateinit var panelSearchStromkreis: View
     private lateinit var panelSearchVerbraucher: View
     private lateinit var panelSearchRaum: View
+    private lateinit var panelSearchLeitung: View
 
     // UI – Stromkreissuche
     private lateinit var spinnerEtage: Spinner
@@ -82,6 +85,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var buttonRaumSuchen: MaterialButton
     private lateinit var textErgebnisRaumsuche: TextView
     private lateinit var valueRaumSucheErgebnis: TextView
+
+    // UI – Leitungssuche
+    private lateinit var spinnerLeitungPrefix: Spinner
+    private lateinit var spinnerLeitungSuffix: Spinner
+    private lateinit var buttonLeitungSuchen: MaterialButton
+    private lateinit var textErgebnisLeitungssuche: TextView
+    private lateinit var valueLeitungSucheErgebnis: TextView
 
     // Standardfarbe für "Aktiv"-Text merken
     private lateinit var aktivDefaultTextColors: ColorStateList
@@ -129,12 +139,14 @@ class MainActivity : AppCompatActivity() {
         clearStromkreisResult()
         clearVerbraucherResult()
         clearRaumResult()
+        clearLeitungResult()
         switchView(activeView)
 
         lifecycleScope.launch {
             loadEtagen()
             loadAktoren()
             loadFis()
+            loadLeitungsPrefixes()
         }
     }
 
@@ -151,9 +163,11 @@ class MainActivity : AppCompatActivity() {
         panelResultStromkreis = findViewById(R.id.panelResultStromkreis)
         panelResultVerbraucher = findViewById(R.id.panelResultVerbraucher)
         panelResultRaum = findViewById(R.id.panelResultRaum)
+        panelResultLeitung = findViewById(R.id.panelResultLeitung)
         panelSearchStromkreis = findViewById(R.id.panelSearchStromkreis)
         panelSearchVerbraucher = findViewById(R.id.panelSearchVerbraucher)
         panelSearchRaum = findViewById(R.id.panelSearchRaum)
+        panelSearchLeitung = findViewById(R.id.panelSearchLeitung)
 
         spinnerEtage = findViewById(R.id.spinnerEtage)
         spinnerRaum = findViewById(R.id.spinnerRaum)
@@ -186,6 +200,12 @@ class MainActivity : AppCompatActivity() {
         textErgebnisRaumsuche = findViewById(R.id.textErgebnisRaumsuche)
         valueRaumSucheErgebnis = findViewById(R.id.valueRaumSucheErgebnis)
 
+        spinnerLeitungPrefix = findViewById(R.id.spinnerLeitungPrefix)
+        spinnerLeitungSuffix = findViewById(R.id.spinnerLeitungSuffix)
+        buttonLeitungSuchen = findViewById(R.id.buttonLeitungSuchen)
+        textErgebnisLeitungssuche = findViewById(R.id.textErgebnisLeitungssuche)
+        valueLeitungSucheErgebnis = findViewById(R.id.valueLeitungSucheErgebnis)
+
         aktivDefaultTextColors = valueAktiv.textColors
     }
 
@@ -208,6 +228,11 @@ class MainActivity : AppCompatActivity() {
 
                     R.id.menu_raumsuche -> {
                         switchView(ActiveView.RAUMSUCHE)
+                        true
+                    }
+
+                    R.id.menu_leitungssuche -> {
+                        switchView(ActiveView.LEITUNGSSUCHE)
                         true
                     }
 
@@ -304,6 +329,22 @@ class MainActivity : AppCompatActivity() {
 
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
         }
+
+        spinnerLeitungPrefix.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                val prefix = parent?.getItemAtPosition(position) as? String ?: return
+                lifecycleScope.launch {
+                    loadLeitungsSuffixes(prefix)
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
     }
 
     private fun setupButtons() {
@@ -360,6 +401,23 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        buttonLeitungSuchen.setOnClickListener {
+            val prefix = spinnerLeitungPrefix.selectedItem as? String
+            val suffix = spinnerLeitungSuffix.selectedItem as? String
+
+            if (prefix.isNullOrBlank() || suffix == null) {
+                Toast.makeText(
+                    this,
+                    "Bitte Leitungsbezeichnung auswählen.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                lifecycleScope.launch {
+                    searchLeitung(prefix, suffix)
+                }
+            }
+        }
     }
 
     private fun switchView(view: ActiveView) {
@@ -376,6 +434,9 @@ class MainActivity : AppCompatActivity() {
 
                 panelResultRaum.visibility = View.GONE
                 panelSearchRaum.visibility = View.GONE
+
+                panelResultLeitung.visibility = View.GONE
+                panelSearchLeitung.visibility = View.GONE
             }
 
             ActiveView.VERBRAUCHERSUCHE -> {
@@ -388,6 +449,9 @@ class MainActivity : AppCompatActivity() {
 
                 panelResultRaum.visibility = View.GONE
                 panelSearchRaum.visibility = View.GONE
+
+                panelResultLeitung.visibility = View.GONE
+                panelSearchLeitung.visibility = View.GONE
             }
 
             ActiveView.RAUMSUCHE -> {
@@ -400,6 +464,24 @@ class MainActivity : AppCompatActivity() {
 
                 panelResultRaum.visibility = View.VISIBLE
                 panelSearchRaum.visibility = View.VISIBLE
+
+                panelResultLeitung.visibility = View.GONE
+                panelSearchLeitung.visibility = View.GONE
+            }
+
+            ActiveView.LEITUNGSSUCHE -> {
+                textCurrentView.text = "Leitungssuche"
+                panelResultStromkreis.visibility = View.GONE
+                panelSearchStromkreis.visibility = View.GONE
+
+                panelResultVerbraucher.visibility = View.GONE
+                panelSearchVerbraucher.visibility = View.GONE
+
+                panelResultRaum.visibility = View.GONE
+                panelSearchRaum.visibility = View.GONE
+
+                panelResultLeitung.visibility = View.VISIBLE
+                panelSearchLeitung.visibility = View.VISIBLE
             }
         }
     }
@@ -519,10 +601,12 @@ class MainActivity : AppCompatActivity() {
         clearStromkreisResult()
         clearVerbraucherResult()
         clearRaumResult()
+        clearLeitungResult()
 
         loadEtagen()
         loadAktoren()
         loadFis()
+        loadLeitungsPrefixes()
     }
 
     private fun parseCsvLine(line: String): List<String> {
@@ -630,6 +714,97 @@ class MainActivity : AppCompatActivity() {
         setSpinnerItems(spinnerLsRaumsuche, lsList)
     }
 
+    private suspend fun loadLeitungsPrefixes() {
+        val leitungsbezeichnungen = withContext(Dispatchers.IO) { dao.getLeitungsbezeichnungen() }
+        val prefixes = sortNatural(
+            leitungsbezeichnungen
+                .mapNotNull { splitLeitungsbezeichnung(it)?.first }
+                .filter { it.isNotBlank() }
+                .distinct()
+        )
+
+        setSpinnerItems(spinnerLeitungPrefix, prefixes)
+
+        if (prefixes.isNotEmpty()) {
+            loadLeitungsSuffixes(prefixes.first())
+        } else {
+            clearSpinner(spinnerLeitungSuffix)
+        }
+    }
+
+    private suspend fun loadLeitungsSuffixes(prefix: String) {
+        val leitungsbezeichnungen = withContext(Dispatchers.IO) { dao.getLeitungsbezeichnungen() }
+        val suffixes = sortNatural(
+            leitungsbezeichnungen
+                .mapNotNull { splitLeitungsbezeichnung(it) }
+                .filter { it.first == prefix }
+                .map { it.second }
+                .distinct()
+        )
+
+        setSpinnerItems(spinnerLeitungSuffix, suffixes)
+    }
+
+    private fun splitLeitungsbezeichnung(leitungsbezeichnung: String): Pair<String, String>? {
+        val value = leitungsbezeichnung.trim()
+        if (value.isBlank()) return null
+
+        val dotIndex = value.indexOf('.')
+        return if (dotIndex >= 0) {
+            value.substring(0, dotIndex) to value.substring(dotIndex + 1)
+        } else {
+            value to ""
+        }
+    }
+
+    private fun joinLeitungsbezeichnung(prefix: String, suffix: String): String {
+        return if (suffix.isBlank()) prefix else "$prefix.$suffix"
+    }
+
+    private fun sortNatural(items: Iterable<String>): List<String> {
+        return items.sortedWith(Comparator { first, second -> compareNaturalText(first, second) })
+    }
+
+    private fun compareNaturalText(first: String, second: String): Int {
+        var firstIndex = 0
+        var secondIndex = 0
+
+        while (firstIndex < first.length && secondIndex < second.length) {
+            val firstChar = first[firstIndex]
+            val secondChar = second[secondIndex]
+
+            if (firstChar.isDigit() && secondChar.isDigit()) {
+                val firstNumberStart = firstIndex
+                val secondNumberStart = secondIndex
+
+                while (firstIndex < first.length && first[firstIndex].isDigit()) firstIndex++
+                while (secondIndex < second.length && second[secondIndex].isDigit()) secondIndex++
+
+                val firstNumberRaw = first.substring(firstNumberStart, firstIndex)
+                val secondNumberRaw = second.substring(secondNumberStart, secondIndex)
+                val firstNumber = firstNumberRaw.trimStart('0').ifEmpty { "0" }
+                val secondNumber = secondNumberRaw.trimStart('0').ifEmpty { "0" }
+
+                val lengthCompare = firstNumber.length.compareTo(secondNumber.length)
+                if (lengthCompare != 0) return lengthCompare
+
+                val valueCompare = firstNumber.compareTo(secondNumber)
+                if (valueCompare != 0) return valueCompare
+
+                val rawLengthCompare = firstNumberRaw.length.compareTo(secondNumberRaw.length)
+                if (rawLengthCompare != 0) return rawLengthCompare
+            } else {
+                val charCompare = firstChar.lowercaseChar().compareTo(secondChar.lowercaseChar())
+                if (charCompare != 0) return charCompare
+
+                firstIndex++
+                secondIndex++
+            }
+        }
+
+        return first.length.compareTo(second.length)
+    }
+
     private fun setSpinnerItems(spinner: Spinner, items: List<String>) {
         val adapter = ArrayAdapter(this, R.layout.spinner_item, items)
         adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
@@ -676,7 +851,31 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private suspend fun searchLeitung(prefix: String, suffix: String) {
+        val leitungsbezeichnung = joinLeitungsbezeichnung(prefix, suffix)
+        val eintraege = withContext(Dispatchers.IO) {
+            dao.findEintraegeByLeitungsbezeichnung(leitungsbezeichnung)
+        }
+
+        if (eintraege.isEmpty()) {
+            showNoLeitungFound()
+        } else {
+            showLeitungResult(eintraege)
+        }
+    }
+
     private fun String?.orDash(): String = if (this.isNullOrBlank()) "-" else this
+
+    private fun formatRoomWithNumber(eintrag: StromEintragEntity): String {
+        return buildString {
+            append(eintrag.raum.orDash())
+            if (!eintrag.raumnr.isNullOrBlank()) {
+                append(" (")
+                append(eintrag.raumnr)
+                append(")")
+            }
+        }
+    }
 
     private fun clearStromkreisResult() {
         valueFi.text = "-"
@@ -756,14 +955,7 @@ class MainActivity : AppCompatActivity() {
             buildString {
                 append(eintrag.etage.orDash())
                 append(" | ")
-                append(eintrag.raum.orDash())
-
-                if (!eintrag.raumnr.isNullOrBlank()) {
-                    append(" (")
-                    append(eintrag.raumnr)
-                    append(")")
-                }
-
+                append(formatRoomWithNumber(eintrag))
                 append(" | ")
                 append(eintrag.verbraucher.orDash())
             }
@@ -790,13 +982,47 @@ class MainActivity : AppCompatActivity() {
             buildString {
                 append(eintrag.etage.orDash())
                 append(" | ")
-                append(eintrag.raum.orDash())
+                append(formatRoomWithNumber(eintrag))
+            }
+        }
+    }
 
-                if (!eintrag.raumnr.isNullOrBlank()) {
-                    append(" (")
-                    append(eintrag.raumnr)
-                    append(")")
-                }
+    private fun clearLeitungResult() {
+        textErgebnisLeitungssuche.text = "Bitte Auswahl treffen und auf Suchen tippen."
+        valueLeitungSucheErgebnis.text = "-"
+    }
+
+    private fun showNoLeitungFound() {
+        textErgebnisLeitungssuche.text = "Keine Einträge gefunden."
+        valueLeitungSucheErgebnis.text = "-"
+    }
+
+    private fun showLeitungResult(eintraege: List<StromEintragEntity>) {
+        textErgebnisLeitungssuche.text = "${eintraege.size} Treffer gefunden."
+
+        valueLeitungSucheErgebnis.text = eintraege.joinToString("\n") { eintrag ->
+            buildString {
+                append(eintrag.etage.orDash())
+                append(" | ")
+                append(formatRoomWithNumber(eintrag))
+                append(" | ")
+                append(eintrag.verbraucher.orDash())
+                append(" | ")
+                append(eintrag.phase.orDash())
+                append(", ")
+                append(eintrag.fi.orDash())
+                append(", ")
+                append(eintrag.ls.orDash())
+                append(" | ")
+                append(eintrag.aktor.orDash())
+                append(", ")
+                append(eintrag.kanal.orDash())
+                append(" | ")
+                append(eintrag.klemmblock.orDash())
+                append(", ")
+                append(eintrag.klemme.orDash())
+                append(" | ")
+                append(eintrag.kabelart.orDash())
             }
         }
     }

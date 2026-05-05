@@ -87,6 +87,16 @@ interface StromEintragDao {
 
     @Query(
         """
+        SELECT DISTINCT leitungsbezeichnung
+        FROM stromEintraege
+        WHERE TRIM(leitungsbezeichnung) <> ''
+        ORDER BY leitungsbezeichnung
+        """
+    )
+    fun getLeitungsbezeichnungen(): List<String>
+
+    @Query(
+        """
         SELECT *
         FROM stromEintraege
         WHERE etage = :etage
@@ -127,5 +137,17 @@ interface StromEintragDao {
     fun findEintraegeByFiLs(
         fi: String,
         ls: String
+    ): List<StromEintragEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM stromEintraege
+        WHERE leitungsbezeichnung = :leitungsbezeichnung
+        ORDER BY etage, raumnr, raum, phase, verbraucher
+        """
+    )
+    fun findEintraegeByLeitungsbezeichnung(
+        leitungsbezeichnung: String
     ): List<StromEintragEntity>
 }

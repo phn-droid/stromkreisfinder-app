@@ -14,6 +14,10 @@
         android:title="Raumsuche" />
 
     <item
+        android:id="@+id/menu_leitungssuche"
+        android:title="Leitungssuche" />
+
+    <item
         android:id="@+id/menu_csv"
         android:title="CSV laden" />
 
