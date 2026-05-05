@@ -17,6 +17,8 @@ data class StromEintragEntity(
     val kanal: String,
     val klemmblock: String,
     val klemme: String,
+    val leitungsbezeichnung: String,
+    val kabelart: String,
     val blatt: String,
     val aktiv: Boolean,
     val bemerkungen: String

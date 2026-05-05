@@ -59,11 +59,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var valueAktor: TextView
     private lateinit var valueKanal: TextView
     private lateinit var valuePhase: TextView
+    private lateinit var valueAktiv: TextView
     private lateinit var valueBlock: TextView
     private lateinit var valueKlemme: TextView
+    private lateinit var valueLeitung: TextView
+    private lateinit var valueKabelart: TextView
     private lateinit var valueRaumnr: TextView
     private lateinit var valueBlatt: TextView
-    private lateinit var valueAktiv: TextView
     private lateinit var valueBemerkung: TextView
     private lateinit var textErgebnis: TextView
 
@@ -162,11 +164,13 @@ class MainActivity : AppCompatActivity() {
         valueAktor = findViewById(R.id.valueAktor)
         valueKanal = findViewById(R.id.valueKanal)
         valuePhase = findViewById(R.id.valuePhase)
+        valueAktiv = findViewById(R.id.valueAktiv)
         valueBlock = findViewById(R.id.valueBlock)
         valueKlemme = findViewById(R.id.valueKlemme)
+        valueLeitung = findViewById(R.id.valueLeitung)
+        valueKabelart = findViewById(R.id.valueKabelart)
         valueRaumnr = findViewById(R.id.valueRaumnr)
         valueBlatt = findViewById(R.id.valueBlatt)
-        valueAktiv = findViewById(R.id.valueAktiv)
         valueBemerkung = findViewById(R.id.valueBemerkung)
         textErgebnis = findViewById(R.id.textErgebnis)
 
@@ -427,31 +431,51 @@ class MainActivity : AppCompatActivity() {
                 ?.useLines { lines ->
                     val iter = lines.iterator()
 
-                    if (iter.hasNext()) {
-                        iter.next()
+                    if (!iter.hasNext()) {
+                        return@useLines
+                    }
+
+                    val headerParts = parseCsvLine(iter.next())
+                    val headerIndex = headerParts
+                        .mapIndexed { index, header -> normalizeCsvHeader(header) to index }
+                        .toMap()
+
+                    fun read(parts: List<String>, vararg headers: String): String {
+                        for (header in headers) {
+                            val index = headerIndex[normalizeCsvHeader(header)]
+                            if (index != null) {
+                                return parts.getOrNull(index)?.trim().orEmpty()
+                            }
+                        }
+                        return ""
                     }
 
                     while (iter.hasNext()) {
                         val line = iter.next()
                         if (line.isBlank()) continue
 
-                        val parts = line.split(';')
-                        if (parts.size < 13) continue
+                        val parts = parseCsvLine(line)
 
-                        val etage = parts[0].trim()
-                        val raumnr = parts[1].trim()
-                        val raum = parts[2].trim()
-                        val phase = parts[3].trim()
-                        val verbraucher = parts[4].trim()
-                        val fi = parts[5].trim()
-                        val ls = parts[6].trim()
-                        val aktor = parts[7].trim()
-                        val kanal = parts[8].trim()
-                        val block = parts[9].trim()
-                        val klemme = parts[10].trim()
-                        val blatt = parts[11].trim()
-                        val aktivString = parts[12].trim()
-                        val bemerkung = if (parts.size > 13) parts[13].trim() else ""
+                        val etage = read(parts, "Etage")
+                        val raumnr = read(parts, "Raumnr.", "Raumnr", "Raumnummer")
+                        val raum = read(parts, "Raum")
+                        val phase = read(parts, "Phase")
+                        val verbraucher = read(parts, "Verbraucher")
+                        val fi = read(parts, "FI")
+                        val ls = read(parts, "LS")
+                        val aktor = read(parts, "Aktor")
+                        val kanal = read(parts, "Kanal")
+                        val block = read(parts, "Klemmblock", "Klemmblock (Xn)", "Block")
+                        val klemme = read(parts, "Klemme")
+                        val leitungsbezeichnung = read(parts, "Leitungsbezeichnung", "Leitung")
+                        val kabelart = read(parts, "Kabelart")
+                        val blatt = read(parts, "Blatt")
+                        val aktivString = read(parts, "Aktiv")
+                        val bemerkung = read(parts, "Bemerkungen", "Bemerkung")
+
+                        if (etage.isBlank() && raum.isBlank() && verbraucher.isBlank()) {
+                            continue
+                        }
 
                         val aktiv = aktivString.equals("ja", ignoreCase = true) ||
                                 aktivString == "1" ||
@@ -470,6 +494,8 @@ class MainActivity : AppCompatActivity() {
                                 kanal = kanal,
                                 klemmblock = block,
                                 klemme = klemme,
+                                leitungsbezeichnung = leitungsbezeichnung,
+                                kabelart = kabelart,
                                 blatt = blatt,
                                 aktiv = aktiv,
                                 bemerkungen = bemerkung
@@ -497,6 +523,49 @@ class MainActivity : AppCompatActivity() {
         loadEtagen()
         loadAktoren()
         loadFis()
+    }
+
+    private fun parseCsvLine(line: String): List<String> {
+        val values = mutableListOf<String>()
+        val current = StringBuilder()
+        var inQuotes = false
+        var index = 0
+
+        while (index < line.length) {
+            val char = line[index]
+            when {
+                char == '"' && inQuotes && index + 1 < line.length && line[index + 1] == '"' -> {
+                    current.append('"')
+                    index++
+                }
+
+                char == '"' -> {
+                    inQuotes = !inQuotes
+                }
+
+                char == ';' && !inQuotes -> {
+                    values.add(current.toString())
+                    current.clear()
+                }
+
+                else -> current.append(char)
+            }
+            index++
+        }
+
+        values.add(current.toString())
+        return values
+    }
+
+    private fun normalizeCsvHeader(value: String): String {
+        return value
+            .trim()
+            .trimStart('\uFEFF')
+            .lowercase()
+            .replace(".", "")
+            .replace(" ", "")
+            .replace("_", "")
+            .replace("-", "")
     }
 
     private suspend fun loadEtagen() {
@@ -615,11 +684,13 @@ class MainActivity : AppCompatActivity() {
         valueAktor.text = "-"
         valueKanal.text = "-"
         valuePhase.text = "-"
+        valueAktiv.text = "-"
         valueBlock.text = "-"
         valueKlemme.text = "-"
+        valueLeitung.text = "-"
+        valueKabelart.text = "-"
         valueRaumnr.text = "-"
         valueBlatt.text = "-"
-        valueAktiv.text = "-"
         valueBemerkung.text = "-"
         valueAktiv.setTextColor(aktivDefaultTextColors)
         textErgebnis.text = "Bitte Auswahl treffen und auf Suchen tippen."
@@ -631,11 +702,13 @@ class MainActivity : AppCompatActivity() {
         valueAktor.text = "-"
         valueKanal.text = "-"
         valuePhase.text = "-"
+        valueAktiv.text = "-"
         valueBlock.text = "-"
         valueKlemme.text = "-"
+        valueLeitung.text = "-"
+        valueKabelart.text = "-"
         valueRaumnr.text = "-"
         valueBlatt.text = "-"
-        valueAktiv.text = "-"
         valueBemerkung.text = "-"
         valueAktiv.setTextColor(aktivDefaultTextColors)
         textErgebnis.text = "Kein Stromkreis gefunden."
@@ -649,6 +722,8 @@ class MainActivity : AppCompatActivity() {
         valuePhase.text = e.phase.orDash()
         valueBlock.text = e.klemmblock.orDash()
         valueKlemme.text = e.klemme.orDash()
+        valueLeitung.text = e.leitungsbezeichnung.orDash()
+        valueKabelart.text = e.kabelart.orDash()
         valueRaumnr.text = e.raumnr.orDash()
         valueBlatt.text = e.blatt.orDash()
         valueBemerkung.text = e.bemerkungen.orDash()

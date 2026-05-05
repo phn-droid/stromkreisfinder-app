@@ -115,8 +115,8 @@
                             android:id="@+id/labelFi"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
                             android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
                             android:gravity="end"
                             android:text="FI:"
                             android:textColor="#80CBC4"
@@ -142,8 +142,8 @@
                             android:id="@+id/labelSicherung"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
                             android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
                             android:gravity="end"
                             android:text="LS:"
                             android:textColor="#FFD54F"
@@ -169,8 +169,8 @@
                             android:id="@+id/labelAktor"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
                             android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
                             android:gravity="end"
                             android:text="Aktor:"
                             android:textColor="#CE93D8"
@@ -196,8 +196,8 @@
                             android:id="@+id/labelKanal"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
                             android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
                             android:gravity="end"
                             android:text="Kanal:"
                             android:textColor="#90CAF9"
@@ -216,14 +216,15 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:layout_marginBottom="2dp"
                         android:orientation="horizontal">
 
                         <TextView
                             android:id="@+id/labelPhase"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
                             android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
                             android:gravity="end"
                             android:text="Phase:"
                             android:textColor="#FFCC80"
@@ -231,6 +232,32 @@
 
                         <TextView
                             android:id="@+id/valuePhase"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="-"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/labelAktiv"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
+                            android:gravity="end"
+                            android:text="Aktiv:"
+                            android:textColor="#B0BEC5"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/valueAktiv"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
@@ -257,8 +284,8 @@
                             android:id="@+id/labelBlock"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
                             android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
                             android:gravity="end"
                             android:text="Block:"
                             android:textColor="#B0BEC5"
@@ -284,8 +311,8 @@
                             android:id="@+id/labelKlemme"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
                             android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
                             android:gravity="end"
                             android:text="Klemme:"
                             android:textColor="#B0BEC5"
@@ -308,11 +335,65 @@
                         android:orientation="horizontal">
 
                         <TextView
-                            android:id="@+id/labelRaumnr"
+                            android:id="@+id/labelLeitung"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
+                            android:gravity="end"
+                            android:text="Leitung:"
+                            android:textColor="#B0BEC5"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/valueLeitung"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
+                            android:text="-"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="2dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/labelKabelart"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
                             android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
+                            android:gravity="end"
+                            android:text="Kabelart:"
+                            android:textColor="#B0BEC5"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/valueKabelart"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="-"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="2dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/labelRaumnr"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
                             android:gravity="end"
                             android:text="Raumnr.:"
                             android:textColor="#B0BEC5"
@@ -331,15 +412,14 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="2dp"
                         android:orientation="horizontal">
 
                         <TextView
                             android:id="@+id/labelBlatt"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
                             android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
                             android:gravity="end"
                             android:text="Blatt:"
                             android:textColor="#B0BEC5"
@@ -347,32 +427,6 @@
 
                         <TextView
                             android:id="@+id/valueBlatt"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="-"
-                            android:textColor="?android:attr/textColorPrimary"
-                            android:textSize="16sp" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-
-                        <TextView
-                            android:id="@+id/labelAktiv"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:layout_marginEnd="8dp"
-                            android:gravity="end"
-                            android:text="Aktiv:"
-                            android:textColor="#B0BEC5"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:id="@+id/valueAktiv"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
@@ -394,8 +448,8 @@
                     android:id="@+id/labelBemerkung"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
                     android:layout_marginEnd="8dp"
+                    android:layout_weight="1"
                     android:gravity="end"
                     android:text="Bemerkungen:"
                     android:textColor="#B0BEC5"
