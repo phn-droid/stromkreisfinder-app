@@ -1,62 +1,78 @@
 package com.example.stromplanfinder
 
-import android.content.Intent
-import android.content.res.ColorStateList
+import android.app.Activity
 import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
+import android.content.res.Configuration
+import android.util.TypedValue
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.PopupMenu
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
-    private enum class ActiveView {
+    private enum class ViewMode {
+        DESKTOP,
+        STROMKREISE_MENU,
         STROMKREISSUCHE,
         VERBRAUCHERSUCHE,
         RAUMSUCHE,
         LEITUNGSSUCHE
     }
 
-    companion object {
-        private const val KEY_ACTIVE_VIEW = "active_view"
-    }
+    private val placeholder = "Bitte wählen"
 
-    // Room
-    private lateinit var db: StromplanDatenbank
-    private lateinit var dao: StromEintragDao
+    private lateinit var repository: StromkreisRepository
 
-    // Allgemeine UI
-    private lateinit var buttonMenu: MaterialButton
     private lateinit var textCurrentView: TextView
+    private lateinit var buttonMenu: View
+    private lateinit var buttonBack: View
+    private lateinit var desktopScroll: ScrollView
+    private lateinit var desktopRootContent: View
+    private lateinit var desktopStromkreiseContent: View
+    private lateinit var contentScroll: ScrollView
+    private lateinit var resultContainer: View
     private lateinit var statusText: TextView
+
+    private lateinit var panelSearchStromkreis: LinearLayout
+    private lateinit var panelSearchVerbraucher: LinearLayout
+    private lateinit var panelSearchRaum: LinearLayout
+    private lateinit var panelSearchLeitung: LinearLayout
 
     private lateinit var panelResultStromkreis: View
     private lateinit var panelResultVerbraucher: View
     private lateinit var panelResultRaum: View
     private lateinit var panelResultLeitung: View
-    private lateinit var panelSearchStromkreis: View
-    private lateinit var panelSearchVerbraucher: View
-    private lateinit var panelSearchRaum: View
-    private lateinit var panelSearchLeitung: View
 
-    // UI – Stromkreissuche
     private lateinit var spinnerEtage: Spinner
     private lateinit var spinnerRaum: Spinner
     private lateinit var spinnerVerbraucher: Spinner
 
+    private lateinit var spinnerAktor: Spinner
+    private lateinit var spinnerKanalVerbrauchersuche: Spinner
+
+    private lateinit var spinnerFiRaumsuche: Spinner
+    private lateinit var spinnerLsRaumsuche: Spinner
+
+    private lateinit var spinnerLeitungPrefix: Spinner
+    private lateinit var spinnerLeitungSuffix: Spinner
+
+    private lateinit var textErgebnis: TextView
     private lateinit var valueFi: TextView
     private lateinit var valueSicherung: TextView
     private lateinit var valueAktor: TextView
@@ -70,109 +86,89 @@ class MainActivity : AppCompatActivity() {
     private lateinit var valueRaumnr: TextView
     private lateinit var valueBlatt: TextView
     private lateinit var valueBemerkung: TextView
-    private lateinit var textErgebnis: TextView
 
-    // UI – Verbrauchersuche
-    private lateinit var spinnerAktor: Spinner
-    private lateinit var spinnerKanalVerbrauchersuche: Spinner
-    private lateinit var buttonVerbraucherSuchen: MaterialButton
     private lateinit var textErgebnisVerbrauchersuche: TextView
     private lateinit var valueVerbraucherSucheErgebnis: TextView
 
-    // UI – Raumsuche
-    private lateinit var spinnerFiRaumsuche: Spinner
-    private lateinit var spinnerLsRaumsuche: Spinner
-    private lateinit var buttonRaumSuchen: MaterialButton
     private lateinit var textErgebnisRaumsuche: TextView
     private lateinit var valueRaumSucheErgebnis: TextView
 
-    // UI – Leitungssuche
-    private lateinit var spinnerLeitungPrefix: Spinner
-    private lateinit var spinnerLeitungSuffix: Spinner
-    private lateinit var buttonLeitungSuchen: MaterialButton
     private lateinit var textErgebnisLeitungssuche: TextView
-    private lateinit var valueLeitungSucheErgebnis: TextView
+    private lateinit var valueLeitungSucheErgebnis: LinearLayout
 
-    // Standardfarbe für "Aktiv"-Text merken
-    private lateinit var aktivDefaultTextColors: ColorStateList
+    private var activeMode: ViewMode = ViewMode.DESKTOP
 
-    private var activeView: ActiveView = ActiveView.STROMKREISSUCHE
-
-    // CSV-Auswahl
-    private val csvPickerLauncher =
-        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    private val csvPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val uri = result.data?.data
             if (uri != null) {
-                contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
                 lifecycleScope.launch {
-                    importCsv(uri)
+                    val imported = withContext(Dispatchers.IO) {
+                        contentResolver.openInputStream(uri)?.use { inputStream ->
+                            repository.importCsv(inputStream)
+                        } ?: 0
+                    }
+                    Toast.makeText(this@MainActivity, "$imported Datensätze importiert", Toast.LENGTH_LONG).show()
+                    reloadCurrentViewData()
                 }
             }
         }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
-        val darkModeOn = prefs.getBoolean("dark_mode", false)
-        AppCompatDelegate.setDefaultNightMode(
-            if (darkModeOn) AppCompatDelegate.MODE_NIGHT_YES
-            else AppCompatDelegate.MODE_NIGHT_NO
-        )
-
+        val savedNightMode = getSharedPreferences("settings", MODE_PRIVATE)
+            .getInt("night_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        AppCompatDelegate.setDefaultNightMode(savedNightMode)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        activeView = savedInstanceState
-            ?.getString(KEY_ACTIVE_VIEW)
-            ?.let { saved -> runCatching { ActiveView.valueOf(saved) }.getOrNull() }
-            ?: ActiveView.STROMKREISSUCHE
-
-        db = StromplanDatenbank.getInstance(applicationContext)
-        dao = db.stromEintragDao()
+        val db = StromplanDatenbank.getInstance(applicationContext)
+        repository = StromkreisRepository(db.stromEintragDao())
 
         bindViews()
+        setupBackNavigation()
         setupMenu()
-        setupSpinnerCallbacks()
-        setupButtons()
+        setupDesktopCards()
+        setupSearchButtons()
 
-        clearStromkreisResult()
-        clearVerbraucherResult()
-        clearRaumResult()
-        clearLeitungResult()
-        switchView(activeView)
-
-        lifecycleScope.launch {
-            loadEtagen()
-            loadAktoren()
-            loadFis()
-            loadLeitungsPrefixes()
-        }
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString(KEY_ACTIVE_VIEW, activeView.name)
-        super.onSaveInstanceState(outState)
+        switchView(ViewMode.DESKTOP)
     }
 
     private fun bindViews() {
-        buttonMenu = findViewById(R.id.buttonMenu)
         textCurrentView = findViewById(R.id.textCurrentView)
+        buttonBack = findViewById(R.id.buttonBack)
+        buttonMenu = findViewById(R.id.buttonMenu)
+        desktopScroll = findViewById(R.id.desktopScroll)
+        desktopRootContent = findViewById(R.id.desktopRootContent)
+        desktopStromkreiseContent = findViewById(R.id.desktopStromkreiseContent)
+        contentScroll = findViewById(R.id.contentScroll)
+        resultContainer = findViewById(R.id.resultContainer)
         statusText = findViewById(R.id.statusText)
 
-        panelResultStromkreis = findViewById(R.id.panelResultStromkreis)
-        panelResultVerbraucher = findViewById(R.id.panelResultVerbraucher)
-        panelResultRaum = findViewById(R.id.panelResultRaum)
-        panelResultLeitung = findViewById(R.id.panelResultLeitung)
         panelSearchStromkreis = findViewById(R.id.panelSearchStromkreis)
         panelSearchVerbraucher = findViewById(R.id.panelSearchVerbraucher)
         panelSearchRaum = findViewById(R.id.panelSearchRaum)
         panelSearchLeitung = findViewById(R.id.panelSearchLeitung)
 
+        panelResultStromkreis = findViewById(R.id.panelResultStromkreis)
+        panelResultVerbraucher = findViewById(R.id.panelResultVerbrauchersuche)
+        panelResultRaum = findViewById(R.id.panelResultRaumsuche)
+        panelResultLeitung = findViewById(R.id.panelResultLeitungssuche)
+
         spinnerEtage = findViewById(R.id.spinnerEtage)
         spinnerRaum = findViewById(R.id.spinnerRaum)
         spinnerVerbraucher = findViewById(R.id.spinnerVerbraucher)
 
+        spinnerAktor = findViewById(R.id.spinnerAktor)
+        spinnerKanalVerbrauchersuche = findViewById(R.id.spinnerKanalVerbrauchersuche)
+
+        spinnerFiRaumsuche = findViewById(R.id.spinnerFiRaumsuche)
+        spinnerLsRaumsuche = findViewById(R.id.spinnerLsRaumsuche)
+
+        spinnerLeitungPrefix = findViewById(R.id.spinnerLeitungPrefix)
+        spinnerLeitungSuffix = findViewById(R.id.spinnerLeitungSuffix)
+
+        textErgebnis = findViewById(R.id.textErgebnis)
         valueFi = findViewById(R.id.valueFi)
         valueSicherung = findViewById(R.id.valueSicherung)
         valueAktor = findViewById(R.id.valueAktor)
@@ -186,844 +182,473 @@ class MainActivity : AppCompatActivity() {
         valueRaumnr = findViewById(R.id.valueRaumnr)
         valueBlatt = findViewById(R.id.valueBlatt)
         valueBemerkung = findViewById(R.id.valueBemerkung)
-        textErgebnis = findViewById(R.id.textErgebnis)
 
-        spinnerAktor = findViewById(R.id.spinnerAktor)
-        spinnerKanalVerbrauchersuche = findViewById(R.id.spinnerKanalVerbrauchersuche)
-        buttonVerbraucherSuchen = findViewById(R.id.buttonVerbraucherSuchen)
         textErgebnisVerbrauchersuche = findViewById(R.id.textErgebnisVerbrauchersuche)
         valueVerbraucherSucheErgebnis = findViewById(R.id.valueVerbraucherSucheErgebnis)
 
-        spinnerFiRaumsuche = findViewById(R.id.spinnerFiRaumsuche)
-        spinnerLsRaumsuche = findViewById(R.id.spinnerLsRaumsuche)
-        buttonRaumSuchen = findViewById(R.id.buttonRaumSuchen)
         textErgebnisRaumsuche = findViewById(R.id.textErgebnisRaumsuche)
         valueRaumSucheErgebnis = findViewById(R.id.valueRaumSucheErgebnis)
 
-        spinnerLeitungPrefix = findViewById(R.id.spinnerLeitungPrefix)
-        spinnerLeitungSuffix = findViewById(R.id.spinnerLeitungSuffix)
-        buttonLeitungSuchen = findViewById(R.id.buttonLeitungSuchen)
         textErgebnisLeitungssuche = findViewById(R.id.textErgebnisLeitungssuche)
         valueLeitungSucheErgebnis = findViewById(R.id.valueLeitungSucheErgebnis)
+    }
 
-        aktivDefaultTextColors = valueAktiv.textColors
+    private fun goBackOneLevel(): Boolean {
+        return when (activeMode) {
+            ViewMode.DESKTOP -> false
+            ViewMode.STROMKREISE_MENU -> {
+                switchView(ViewMode.DESKTOP)
+                true
+            }
+            ViewMode.STROMKREISSUCHE,
+            ViewMode.VERBRAUCHERSUCHE,
+            ViewMode.RAUMSUCHE,
+            ViewMode.LEITUNGSSUCHE -> {
+                switchView(ViewMode.STROMKREISE_MENU)
+                true
+            }
+        }
+    }
+
+    private fun setupBackNavigation() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (!goBackOneLevel()) {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
     }
 
     private fun setupMenu() {
-        buttonMenu.setOnClickListener { view ->
-            val popup = PopupMenu(this, view)
-            popup.menuInflater.inflate(R.menu.main_menu, popup.menu)
+        buttonBack.setOnClickListener {
+            goBackOneLevel()
+        }
 
-            popup.setOnMenuItemClickListener { item ->
-                when (item.itemId) {
-                    R.id.menu_stromkreissuche -> {
-                        switchView(ActiveView.STROMKREISSUCHE)
-                        true
+        buttonMenu.setOnClickListener { anchor ->
+            PopupMenu(this, anchor).apply {
+                menuInflater.inflate(R.menu.main_menu, menu)
+                menu.findItem(R.id.menu_darkmode)?.isChecked = isNightModeActive()
+                setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        R.id.menu_desktop -> switchView(ViewMode.DESKTOP)
+                        R.id.menu_stromkreise -> switchView(ViewMode.STROMKREISE_MENU)
+                        R.id.menu_csv_import -> openCsvPicker()
+                        R.id.menu_darkmode -> toggleDarkMode()
+                        R.id.menu_info -> showInfoDialog()
                     }
-
-                    R.id.menu_verbrauchersuche -> {
-                        switchView(ActiveView.VERBRAUCHERSUCHE)
-                        true
-                    }
-
-                    R.id.menu_raumsuche -> {
-                        switchView(ActiveView.RAUMSUCHE)
-                        true
-                    }
-
-                    R.id.menu_leitungssuche -> {
-                        switchView(ActiveView.LEITUNGSSUCHE)
-                        true
-                    }
-
-                    R.id.menu_csv -> {
-                        openCsvPicker()
-                        true
-                    }
-
-                    R.id.menu_toggle_theme -> {
-                        toggleTheme()
-                        true
-                    }
-
-                    R.id.menu_info -> {
-                        startActivity(Intent(this, InfoActivity::class.java))
-                        true
-                    }
-
-                    R.id.menu_exit -> {
-                        finishAffinity()
-                        true
-                    }
-
-                    else -> false
+                    true
                 }
+                show()
             }
-            popup.show()
         }
     }
 
-    private fun setupSpinnerCallbacks() {
-        spinnerEtage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?,
-                view: View?,
-                position: Int,
-                id: Long
-            ) {
-                val etage = parent?.getItemAtPosition(position) as? String ?: return
-                lifecycleScope.launch {
-                    loadRaeume(etage)
-                }
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+    private fun setupDesktopCards() {
+        findViewById<View>(R.id.cardStromkreise).setOnClickListener {
+            switchView(ViewMode.STROMKREISE_MENU)
+        }
+        findViewById<View>(R.id.cardStromkreissuche).setOnClickListener {
+            switchView(ViewMode.STROMKREISSUCHE)
+        }
+        findViewById<View>(R.id.cardVerbrauchersuche).setOnClickListener {
+            switchView(ViewMode.VERBRAUCHERSUCHE)
+        }
+        findViewById<View>(R.id.cardRaumsuche).setOnClickListener {
+            switchView(ViewMode.RAUMSUCHE)
+        }
+        findViewById<View>(R.id.cardLeitungssuche).setOnClickListener {
+            switchView(ViewMode.LEITUNGSSUCHE)
+        }
+        findViewById<View>(R.id.cardStromkreiseBack).setOnClickListener {
+            switchView(ViewMode.DESKTOP)
+        }
+        findViewById<View>(R.id.cardDarkmode).setOnClickListener {
+            toggleDarkMode()
         }
 
-        spinnerRaum.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?,
-                view: View?,
-                position: Int,
-                id: Long
-            ) {
-                val etage = spinnerEtage.selectedItem as? String ?: return
-                val raum = parent?.getItemAtPosition(position) as? String ?: return
-
-                lifecycleScope.launch {
-                    loadVerbraucher(etage, raum)
-                }
+        listOf(
+            R.id.cardZaehlerkasten,
+            R.id.cardBalkonkraftwerk,
+            R.id.cardNetzwerk,
+            R.id.cardKnx
+        ).forEach { cardId ->
+            findViewById<View>(cardId).setOnClickListener {
+                Toast.makeText(this, "Diese Fachanwendung ist noch nicht aktiviert.", Toast.LENGTH_SHORT).show()
             }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-        }
-
-        spinnerAktor.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?,
-                view: View?,
-                position: Int,
-                id: Long
-            ) {
-                val aktor = parent?.getItemAtPosition(position) as? String ?: return
-                lifecycleScope.launch {
-                    loadKanaele(aktor)
-                }
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-        }
-
-        spinnerFiRaumsuche.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?,
-                view: View?,
-                position: Int,
-                id: Long
-            ) {
-                val fi = parent?.getItemAtPosition(position) as? String ?: return
-                lifecycleScope.launch {
-                    loadLsForFi(fi)
-                }
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-        }
-
-        spinnerLeitungPrefix.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?,
-                view: View?,
-                position: Int,
-                id: Long
-            ) {
-                val prefix = parent?.getItemAtPosition(position) as? String ?: return
-                lifecycleScope.launch {
-                    loadLeitungsSuffixes(prefix)
-                }
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
         }
     }
 
-    private fun setupButtons() {
-        val buttonSuchen: MaterialButton = findViewById(R.id.buttonSuchen)
+    private fun setupSearchButtons() {
+        findViewById<View>(R.id.buttonSuchen).setOnClickListener { searchStromkreis() }
+        findViewById<View>(R.id.buttonVerbraucherSuchen).setOnClickListener { searchVerbraucher() }
+        findViewById<View>(R.id.buttonRaumSuchen).setOnClickListener { searchRaum() }
+        findViewById<View>(R.id.buttonLeitungSuchen).setOnClickListener { searchLeitung() }
+    }
 
-        buttonSuchen.setOnClickListener {
-            val etage = spinnerEtage.selectedItem as? String
-            val raum = spinnerRaum.selectedItem as? String
-            val verbraucher = spinnerVerbraucher.selectedItem as? String
+    private fun switchView(mode: ViewMode) {
+        activeMode = mode
+        resetResults()
 
-            if (etage.isNullOrBlank() || raum.isNullOrBlank() || verbraucher.isNullOrBlank()) {
-                Toast.makeText(
-                    this,
-                    "Bitte Etage, Raum und Verbraucher auswählen.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            } else {
-                lifecycleScope.launch {
-                    searchStromkreis(etage, raum, verbraucher)
-                }
-            }
+        val isDesktopMode = mode == ViewMode.DESKTOP || mode == ViewMode.STROMKREISE_MENU
+        desktopScroll.visibility = if (isDesktopMode) View.VISIBLE else View.GONE
+        desktopRootContent.visibility = if (mode == ViewMode.DESKTOP) View.VISIBLE else View.GONE
+        desktopStromkreiseContent.visibility = if (mode == ViewMode.STROMKREISE_MENU) View.VISIBLE else View.GONE
+        contentScroll.visibility = if (isDesktopMode) View.GONE else View.VISIBLE
+        resultContainer.visibility = if (isDesktopMode) View.GONE else View.VISIBLE
+
+        panelSearchStromkreis.visibility = if (mode == ViewMode.STROMKREISSUCHE) View.VISIBLE else View.GONE
+        panelSearchVerbraucher.visibility = if (mode == ViewMode.VERBRAUCHERSUCHE) View.VISIBLE else View.GONE
+        panelSearchRaum.visibility = if (mode == ViewMode.RAUMSUCHE) View.VISIBLE else View.GONE
+        panelSearchLeitung.visibility = if (mode == ViewMode.LEITUNGSSUCHE) View.VISIBLE else View.GONE
+
+        panelResultStromkreis.visibility = if (mode == ViewMode.STROMKREISSUCHE) View.VISIBLE else View.GONE
+        panelResultVerbraucher.visibility = if (mode == ViewMode.VERBRAUCHERSUCHE) View.VISIBLE else View.GONE
+        panelResultRaum.visibility = if (mode == ViewMode.RAUMSUCHE) View.VISIBLE else View.GONE
+        panelResultLeitung.visibility = if (mode == ViewMode.LEITUNGSSUCHE) View.VISIBLE else View.GONE
+
+        textCurrentView.text = when (mode) {
+            ViewMode.DESKTOP -> "Fachanwendungen"
+            ViewMode.STROMKREISE_MENU -> "Stromkreise"
+            ViewMode.STROMKREISSUCHE -> "Stromkreissuche"
+            ViewMode.VERBRAUCHERSUCHE -> "Verbrauchersuche"
+            ViewMode.RAUMSUCHE -> "Raumsuche"
+            ViewMode.LEITUNGSSUCHE -> "Leitungssuche"
         }
 
-        buttonVerbraucherSuchen.setOnClickListener {
-            val aktor = spinnerAktor.selectedItem as? String
-            val kanal = spinnerKanalVerbrauchersuche.selectedItem as? String
+        buttonBack.visibility = if (mode == ViewMode.DESKTOP) View.INVISIBLE else View.VISIBLE
 
-            if (aktor.isNullOrBlank() || kanal.isNullOrBlank()) {
-                Toast.makeText(
-                    this,
-                    "Bitte Aktor und Kanal auswählen.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            } else {
+        reloadCurrentViewData()
+    }
+
+    private fun toggleDarkMode() {
+        val newMode = if (isNightModeActive()) {
+            AppCompatDelegate.MODE_NIGHT_NO
+        } else {
+            AppCompatDelegate.MODE_NIGHT_YES
+        }
+        getSharedPreferences("settings", MODE_PRIVATE)
+            .edit()
+            .putInt("night_mode", newMode)
+            .apply()
+        AppCompatDelegate.setDefaultNightMode(newMode)
+    }
+
+    private fun isNightModeActive(): Boolean {
+        return (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+    }
+
+    private fun themeColor(attribute: Int, fallback: Int): Int {
+        val typedValue = TypedValue()
+        return if (theme.resolveAttribute(attribute, typedValue, true)) {
+            if (typedValue.resourceId != 0) getColor(typedValue.resourceId) else typedValue.data
+        } else {
+            fallback
+        }
+    }
+
+    private fun reloadCurrentViewData() {
+        when (activeMode) {
+            ViewMode.DESKTOP,
+            ViewMode.STROMKREISE_MENU -> Unit
+            ViewMode.STROMKREISSUCHE -> loadStromkreisFilters()
+            ViewMode.VERBRAUCHERSUCHE -> loadVerbraucherFilters()
+            ViewMode.RAUMSUCHE -> loadRaumFilters()
+            ViewMode.LEITUNGSSUCHE -> loadLeitungFilters()
+        }
+    }
+
+    private fun loadStromkreisFilters() {
+        lifecycleScope.launch {
+            val etagen = withContext(Dispatchers.IO) { repository.getEtagen() }
+            setSpinnerItems(spinnerEtage, etagen)
+            setSpinnerItems(spinnerRaum, emptyList())
+            setSpinnerItems(spinnerVerbraucher, emptyList())
+
+            spinnerEtage.onItemSelectedListener = simpleSelectedListener {
+                val etage = selectedValue(spinnerEtage)
                 lifecycleScope.launch {
-                    searchVerbraucher(aktor, kanal)
+                    val raeume = withContext(Dispatchers.IO) { repository.getRaeume(etage) }
+                    setSpinnerItems(spinnerRaum, raeume)
+                    setSpinnerItems(spinnerVerbraucher, emptyList())
                 }
             }
-        }
 
-        buttonRaumSuchen.setOnClickListener {
-            val fi = spinnerFiRaumsuche.selectedItem as? String
-            val ls = spinnerLsRaumsuche.selectedItem as? String
-
-            if (fi.isNullOrBlank() || ls.isNullOrBlank()) {
-                Toast.makeText(
-                    this,
-                    "Bitte FI und LS auswählen.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            } else {
+            spinnerRaum.onItemSelectedListener = simpleSelectedListener {
+                val etage = selectedValue(spinnerEtage)
+                val raum = selectedValue(spinnerRaum)
                 lifecycleScope.launch {
-                    searchRaeume(fi, ls)
-                }
-            }
-        }
-
-        buttonLeitungSuchen.setOnClickListener {
-            val prefix = spinnerLeitungPrefix.selectedItem as? String
-            val suffix = spinnerLeitungSuffix.selectedItem as? String
-
-            if (prefix.isNullOrBlank() || suffix == null) {
-                Toast.makeText(
-                    this,
-                    "Bitte Leitungsbezeichnung auswählen.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            } else {
-                lifecycleScope.launch {
-                    searchLeitung(prefix, suffix)
+                    val verbraucher = withContext(Dispatchers.IO) { repository.getVerbraucher(etage, raum) }
+                    setSpinnerItems(spinnerVerbraucher, verbraucher)
                 }
             }
         }
     }
 
-    private fun switchView(view: ActiveView) {
-        activeView = view
+    private fun loadVerbraucherFilters() {
+        lifecycleScope.launch {
+            val aktoren = withContext(Dispatchers.IO) { repository.getAktoren() }
+            setSpinnerItems(spinnerAktor, aktoren)
+            setSpinnerItems(spinnerKanalVerbrauchersuche, emptyList())
 
-        when (view) {
-            ActiveView.STROMKREISSUCHE -> {
-                textCurrentView.text = "Stromkreissuche"
-                panelResultStromkreis.visibility = View.VISIBLE
-                panelSearchStromkreis.visibility = View.VISIBLE
-
-                panelResultVerbraucher.visibility = View.GONE
-                panelSearchVerbraucher.visibility = View.GONE
-
-                panelResultRaum.visibility = View.GONE
-                panelSearchRaum.visibility = View.GONE
-
-                panelResultLeitung.visibility = View.GONE
-                panelSearchLeitung.visibility = View.GONE
-            }
-
-            ActiveView.VERBRAUCHERSUCHE -> {
-                textCurrentView.text = "Verbrauchersuche"
-                panelResultStromkreis.visibility = View.GONE
-                panelSearchStromkreis.visibility = View.GONE
-
-                panelResultVerbraucher.visibility = View.VISIBLE
-                panelSearchVerbraucher.visibility = View.VISIBLE
-
-                panelResultRaum.visibility = View.GONE
-                panelSearchRaum.visibility = View.GONE
-
-                panelResultLeitung.visibility = View.GONE
-                panelSearchLeitung.visibility = View.GONE
-            }
-
-            ActiveView.RAUMSUCHE -> {
-                textCurrentView.text = "Raumsuche"
-                panelResultStromkreis.visibility = View.GONE
-                panelSearchStromkreis.visibility = View.GONE
-
-                panelResultVerbraucher.visibility = View.GONE
-                panelSearchVerbraucher.visibility = View.GONE
-
-                panelResultRaum.visibility = View.VISIBLE
-                panelSearchRaum.visibility = View.VISIBLE
-
-                panelResultLeitung.visibility = View.GONE
-                panelSearchLeitung.visibility = View.GONE
-            }
-
-            ActiveView.LEITUNGSSUCHE -> {
-                textCurrentView.text = "Leitungssuche"
-                panelResultStromkreis.visibility = View.GONE
-                panelSearchStromkreis.visibility = View.GONE
-
-                panelResultVerbraucher.visibility = View.GONE
-                panelSearchVerbraucher.visibility = View.GONE
-
-                panelResultRaum.visibility = View.GONE
-                panelSearchRaum.visibility = View.GONE
-
-                panelResultLeitung.visibility = View.VISIBLE
-                panelSearchLeitung.visibility = View.VISIBLE
+            spinnerAktor.onItemSelectedListener = simpleSelectedListener {
+                val aktor = selectedValue(spinnerAktor)
+                lifecycleScope.launch {
+                    val kanaele = withContext(Dispatchers.IO) { repository.getKanaeleFuerAktor(aktor) }
+                    setSpinnerItems(spinnerKanalVerbrauchersuche, kanaele)
+                }
             }
         }
     }
 
-    private fun toggleTheme() {
-        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
-        val current = prefs.getBoolean("dark_mode", false)
-        val newValue = !current
-        prefs.edit().putBoolean("dark_mode", newValue).apply()
+    private fun loadRaumFilters() {
+        lifecycleScope.launch {
+            val fis = withContext(Dispatchers.IO) { repository.getFis() }
+            setSpinnerItems(spinnerFiRaumsuche, fis)
+            setSpinnerItems(spinnerLsRaumsuche, emptyList())
 
-        AppCompatDelegate.setDefaultNightMode(
-            if (newValue) AppCompatDelegate.MODE_NIGHT_YES
-            else AppCompatDelegate.MODE_NIGHT_NO
-        )
+            spinnerFiRaumsuche.onItemSelectedListener = simpleSelectedListener {
+                val fi = selectedValue(spinnerFiRaumsuche)
+                lifecycleScope.launch {
+                    val ls = withContext(Dispatchers.IO) { repository.getLsFuerFi(fi) }
+                    setSpinnerItems(spinnerLsRaumsuche, ls)
+                }
+            }
+        }
+    }
+
+    private fun loadLeitungFilters() {
+        lifecycleScope.launch {
+            val prefixes = withContext(Dispatchers.IO) { repository.getLeitungsPraefixe() }
+            setSpinnerItems(spinnerLeitungPrefix, prefixes)
+            setSpinnerItems(spinnerLeitungSuffix, emptyList())
+
+            spinnerLeitungPrefix.onItemSelectedListener = simpleSelectedListener {
+                val prefix = selectedValue(spinnerLeitungPrefix)
+                lifecycleScope.launch {
+                    val suffixes = withContext(Dispatchers.IO) { repository.getLeitungsSuffixe(prefix) }
+                    setSpinnerItems(spinnerLeitungSuffix, suffixes)
+                }
+            }
+        }
+    }
+
+    private fun searchStromkreis() {
+        val etage = selectedValue(spinnerEtage)
+        val raum = selectedValue(spinnerRaum)
+        val verbraucher = selectedValue(spinnerVerbraucher)
+
+        if (etage.isBlank() || raum.isBlank() || verbraucher.isBlank()) {
+            statusText.text = "Bitte Etage, Raum und Verbraucher auswählen."
+            return
+        }
+
+        lifecycleScope.launch {
+            val eintrag = withContext(Dispatchers.IO) { repository.findEintrag(etage, raum, verbraucher) }
+            if (eintrag == null) {
+                textErgebnis.text = "Kein Treffer gefunden."
+                clearStromkreisValues()
+            } else {
+                showStromkreisResult(eintrag)
+            }
+        }
+    }
+
+    private fun searchVerbraucher() {
+        val aktor = selectedValue(spinnerAktor)
+        val kanal = selectedValue(spinnerKanalVerbrauchersuche)
+
+        if (aktor.isBlank() || kanal.isBlank()) {
+            statusText.text = "Bitte Aktor und Kanal auswählen."
+            return
+        }
+
+        lifecycleScope.launch {
+            val treffer = withContext(Dispatchers.IO) { repository.findEintraegeByAktorKanal(aktor, kanal) }
+            textErgebnisVerbrauchersuche.text = if (treffer.isEmpty()) "Kein Treffer gefunden." else "${treffer.size} Treffer gefunden:"
+            valueVerbraucherSucheErgebnis.text = treffer.joinToString(separator = "\n\n") { eintrag ->
+                "${eintrag.etage} | ${eintrag.raum} (${eintrag.raumnr}) | ${eintrag.verbraucher}"
+            }.ifBlank { "-" }
+        }
+    }
+
+    private fun searchRaum() {
+        val fi = selectedValue(spinnerFiRaumsuche)
+        val ls = selectedValue(spinnerLsRaumsuche)
+
+        if (fi.isBlank() || ls.isBlank()) {
+            statusText.text = "Bitte FI und LS auswählen."
+            return
+        }
+
+        lifecycleScope.launch {
+            val treffer = withContext(Dispatchers.IO) { repository.findRaeumeByFiLs(fi, ls) }
+            val eindeutigeRaeume = treffer
+                .map { Triple(it.etage, it.raum, it.raumnr) }
+                .distinct()
+                .sortedWith(compareBy<Triple<String, String, String>> { it.first }.thenBy { it.second }.thenBy { it.third })
+
+            textErgebnisRaumsuche.text = if (eindeutigeRaeume.isEmpty()) "Kein Treffer gefunden." else "${eindeutigeRaeume.size} Räume gefunden:"
+            valueRaumSucheErgebnis.text = eindeutigeRaeume.joinToString(separator = "\n") { (etage, raum, raumnr) ->
+                "$etage | $raum ($raumnr)"
+            }.ifBlank { "-" }
+        }
+    }
+
+    private fun searchLeitung() {
+        val prefix = selectedValue(spinnerLeitungPrefix)
+        val suffix = selectedValue(spinnerLeitungSuffix)
+
+        if (prefix.isBlank() || suffix.isBlank()) {
+            statusText.text = "Bitte beide Teile der Leitungsbezeichnung auswählen."
+            return
+        }
+
+        lifecycleScope.launch {
+            val treffer = withContext(Dispatchers.IO) { repository.findEintraegeByLeitung(prefix, suffix) }
+            textErgebnisLeitungssuche.text = if (treffer.isEmpty()) "Kein Treffer gefunden." else "${treffer.size} Treffer gefunden:"
+            valueLeitungSucheErgebnis.removeAllViews()
+            if (treffer.isEmpty()) {
+                valueLeitungSucheErgebnis.addView(resultLine("-"))
+            } else {
+                treffer.forEachIndexed { index, eintrag ->
+                    valueLeitungSucheErgebnis.addView(resultLine(formatLeitungsTreffer(eintrag)))
+                    if (index < treffer.lastIndex) {
+                        valueLeitungSucheErgebnis.addView(separatorLine())
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showStromkreisResult(eintrag: StromEintragEntity) {
+        textErgebnis.text = "Treffer gefunden: ${eintrag.etage} | ${eintrag.raum} | ${eintrag.verbraucher}"
+        valueFi.text = dash(eintrag.fi)
+        valueSicherung.text = dash(eintrag.ls)
+        valueAktor.text = dash(eintrag.aktor)
+        valueKanal.text = dash(eintrag.kanal)
+        valuePhase.text = dash(eintrag.phase)
+        valueAktiv.text = if (eintrag.aktiv) "Ja" else "Nein"
+        valueBlock.text = dash(eintrag.klemmblock)
+        valueKlemme.text = dash(eintrag.klemme)
+        valueLeitung.text = dash(eintrag.leitungsbezeichnung)
+        valueKabelart.text = dash(eintrag.kabelart)
+        valueRaumnr.text = dash(eintrag.raumnr)
+        valueBlatt.text = dash(eintrag.blatt)
+        valueBemerkung.text = dash(eintrag.bemerkungen)
+        statusText.text = ""
+    }
+
+    private fun clearStromkreisValues() {
+        listOf(
+            valueFi,
+            valueSicherung,
+            valueAktor,
+            valueKanal,
+            valuePhase,
+            valueAktiv,
+            valueBlock,
+            valueKlemme,
+            valueLeitung,
+            valueKabelart,
+            valueRaumnr,
+            valueBlatt,
+            valueBemerkung
+        ).forEach { it.text = "-" }
+    }
+
+    private fun resetResults() {
+        statusText.text = ""
+        textErgebnis.text = "Bitte Auswahl treffen und auf Suchen tippen."
+        clearStromkreisValues()
+        textErgebnisVerbrauchersuche.text = "Bitte Auswahl treffen und auf Suchen tippen."
+        valueVerbraucherSucheErgebnis.text = "-"
+        textErgebnisRaumsuche.text = "Bitte Auswahl treffen und auf Suchen tippen."
+        valueRaumSucheErgebnis.text = "-"
+        textErgebnisLeitungssuche.text = "Bitte Auswahl treffen und auf Suchen tippen."
+        valueLeitungSucheErgebnis.removeAllViews()
+        valueLeitungSucheErgebnis.addView(resultLine("-"))
+    }
+
+    private fun setSpinnerItems(spinner: Spinner, values: List<String>) {
+        val items = listOf(placeholder) + values.filter { it.isNotBlank() }.distinct()
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, items).also {
+            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        spinner.adapter = adapter
+        spinner.setSelection(0)
+    }
+
+    private fun simpleSelectedListener(onSelected: () -> Unit): AdapterView.OnItemSelectedListener {
+        return object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (position > 0) onSelected()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+    }
+
+    private fun selectedValue(spinner: Spinner): String {
+        return spinner.selectedItem?.toString()?.takeUnless { it == placeholder } ?: ""
+    }
+
+    private fun dash(value: String?): String {
+        return value?.takeIf { it.isNotBlank() } ?: "-"
+    }
+
+    private fun resultLine(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            textSize = 15f
+            setTextColor(themeColor(android.R.attr.textColorPrimary, Color.BLACK))
+            setPadding(0, 8, 0, 8)
+        }
+    }
+
+    private fun separatorLine(): View {
+        return View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (resources.displayMetrics.density).toInt().coerceAtLeast(1)
+            ).apply {
+                topMargin = 4
+                bottomMargin = 4
+            }
+            setBackgroundColor(themeColor(android.R.attr.colorAccent, Color.parseColor("#B39DDB")))
+        }
+    }
+
+    private fun formatLeitungsTreffer(eintrag: StromEintragEntity): String {
+        return listOf(
+            eintrag.etage,
+            "${eintrag.raum} (${eintrag.raumnr})",
+            eintrag.verbraucher,
+            joinNonBlank(eintrag.phase, eintrag.fi, eintrag.ls),
+            joinNonBlank(eintrag.aktor, eintrag.kanal),
+            joinNonBlank(eintrag.klemmblock, eintrag.klemme),
+            eintrag.kabelart
+        ).joinToString(" | ") { dash(it) }
+    }
+
+    private fun joinNonBlank(vararg values: String?): String {
+        return values.filterNotNull().map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")
     }
 
     private fun openCsvPicker() {
-        csvPickerLauncher.launch(arrayOf("text/*", "application/octet-stream", "*/*"))
-    }
-
-    private suspend fun importCsv(uri: Uri) {
-        statusText.text = "CSV wird geladen ..."
-
-        val entries = withContext(Dispatchers.IO) {
-            val list = mutableListOf<StromEintragEntity>()
-
-            contentResolver.openInputStream(uri)
-                ?.bufferedReader()
-                ?.useLines { lines ->
-                    val iter = lines.iterator()
-
-                    if (!iter.hasNext()) {
-                        return@useLines
-                    }
-
-                    val headerParts = parseCsvLine(iter.next())
-                    val headerIndex = headerParts
-                        .mapIndexed { index, header -> normalizeCsvHeader(header) to index }
-                        .toMap()
-
-                    fun read(parts: List<String>, vararg headers: String): String {
-                        for (header in headers) {
-                            val index = headerIndex[normalizeCsvHeader(header)]
-                            if (index != null) {
-                                return parts.getOrNull(index)?.trim().orEmpty()
-                            }
-                        }
-                        return ""
-                    }
-
-                    while (iter.hasNext()) {
-                        val line = iter.next()
-                        if (line.isBlank()) continue
-
-                        val parts = parseCsvLine(line)
-
-                        val etage = read(parts, "Etage")
-                        val raumnr = read(parts, "Raumnr.", "Raumnr", "Raumnummer")
-                        val raum = read(parts, "Raum")
-                        val phase = read(parts, "Phase")
-                        val verbraucher = read(parts, "Verbraucher")
-                        val fi = read(parts, "FI")
-                        val ls = read(parts, "LS")
-                        val aktor = read(parts, "Aktor")
-                        val kanal = read(parts, "Kanal")
-                        val block = read(parts, "Klemmblock", "Klemmblock (Xn)", "Block")
-                        val klemme = read(parts, "Klemme")
-                        val leitungsbezeichnung = read(parts, "Leitungsbezeichnung", "Leitung")
-                        val kabelart = read(parts, "Kabelart")
-                        val blatt = read(parts, "Blatt")
-                        val aktivString = read(parts, "Aktiv")
-                        val bemerkung = read(parts, "Bemerkungen", "Bemerkung")
-
-                        if (etage.isBlank() && raum.isBlank() && verbraucher.isBlank()) {
-                            continue
-                        }
-
-                        val aktiv = aktivString.equals("ja", ignoreCase = true) ||
-                                aktivString == "1" ||
-                                aktivString.equals("true", ignoreCase = true)
-
-                        list.add(
-                            StromEintragEntity(
-                                etage = etage,
-                                raumnr = raumnr,
-                                raum = raum,
-                                phase = phase,
-                                verbraucher = verbraucher,
-                                fi = fi,
-                                ls = ls,
-                                aktor = aktor,
-                                kanal = kanal,
-                                klemmblock = block,
-                                klemme = klemme,
-                                leitungsbezeichnung = leitungsbezeichnung,
-                                kabelart = kabelart,
-                                blatt = blatt,
-                                aktiv = aktiv,
-                                bemerkungen = bemerkung
-                            )
-                        )
-                    }
-                }
-
-            list
+        val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(android.content.Intent.CATEGORY_OPENABLE)
+            type = "text/*"
         }
-
-        withContext(Dispatchers.IO) {
-            dao.clearAll()
-            if (entries.isNotEmpty()) {
-                dao.insertAll(entries)
-            }
-        }
-
-        statusText.text = "Daten aus CSV geladen (${entries.size} Einträge)."
-
-        clearStromkreisResult()
-        clearVerbraucherResult()
-        clearRaumResult()
-        clearLeitungResult()
-
-        loadEtagen()
-        loadAktoren()
-        loadFis()
-        loadLeitungsPrefixes()
+        csvPicker.launch(intent)
     }
 
-    private fun parseCsvLine(line: String): List<String> {
-        val values = mutableListOf<String>()
-        val current = StringBuilder()
-        var inQuotes = false
-        var index = 0
-
-        while (index < line.length) {
-            val char = line[index]
-            when {
-                char == '"' && inQuotes && index + 1 < line.length && line[index + 1] == '"' -> {
-                    current.append('"')
-                    index++
-                }
-
-                char == '"' -> {
-                    inQuotes = !inQuotes
-                }
-
-                char == ';' && !inQuotes -> {
-                    values.add(current.toString())
-                    current.clear()
-                }
-
-                else -> current.append(char)
-            }
-            index++
-        }
-
-        values.add(current.toString())
-        return values
-    }
-
-    private fun normalizeCsvHeader(value: String): String {
-        return value
-            .trim()
-            .trimStart('\uFEFF')
-            .lowercase()
-            .replace(".", "")
-            .replace(" ", "")
-            .replace("_", "")
-            .replace("-", "")
-    }
-
-    private suspend fun loadEtagen() {
-        val etagen = withContext(Dispatchers.IO) { dao.getEtagen() }
-        setSpinnerItems(spinnerEtage, etagen)
-
-        if (etagen.isNotEmpty()) {
-            loadRaeume(etagen.first())
-        } else {
-            clearSpinner(spinnerRaum)
-            clearSpinner(spinnerVerbraucher)
-        }
-    }
-
-    private suspend fun loadRaeume(etage: String) {
-        val raeume = withContext(Dispatchers.IO) { dao.getRaeume(etage) }
-        setSpinnerItems(spinnerRaum, raeume)
-
-        if (raeume.isNotEmpty()) {
-            loadVerbraucher(etage, raeume.first())
-        } else {
-            clearSpinner(spinnerVerbraucher)
-        }
-    }
-
-    private suspend fun loadVerbraucher(etage: String, raum: String) {
-        val verbraucherList = withContext(Dispatchers.IO) {
-            dao.getVerbraucher(etage, raum)
-        }
-        setSpinnerItems(spinnerVerbraucher, verbraucherList)
-    }
-
-    private suspend fun loadAktoren() {
-        val aktoren = withContext(Dispatchers.IO) { dao.getAktoren() }
-        setSpinnerItems(spinnerAktor, aktoren)
-
-        if (aktoren.isNotEmpty()) {
-            loadKanaele(aktoren.first())
-        } else {
-            clearSpinner(spinnerKanalVerbrauchersuche)
-        }
-    }
-
-    private suspend fun loadKanaele(aktor: String) {
-        val kanaele = withContext(Dispatchers.IO) { dao.getKanaele(aktor) }
-        setSpinnerItems(spinnerKanalVerbrauchersuche, kanaele)
-    }
-
-    private suspend fun loadFis() {
-        val fis = withContext(Dispatchers.IO) { dao.getFis() }
-        setSpinnerItems(spinnerFiRaumsuche, fis)
-
-        if (fis.isNotEmpty()) {
-            loadLsForFi(fis.first())
-        } else {
-            clearSpinner(spinnerLsRaumsuche)
-        }
-    }
-
-    private suspend fun loadLsForFi(fi: String) {
-        val lsList = withContext(Dispatchers.IO) { dao.getLsForFi(fi) }
-        setSpinnerItems(spinnerLsRaumsuche, lsList)
-    }
-
-    private suspend fun loadLeitungsPrefixes() {
-        val leitungsbezeichnungen = withContext(Dispatchers.IO) { dao.getLeitungsbezeichnungen() }
-        val prefixes = sortNatural(
-            leitungsbezeichnungen
-                .mapNotNull { splitLeitungsbezeichnung(it)?.first }
-                .filter { it.isNotBlank() }
-                .distinct()
-        )
-
-        setSpinnerItems(spinnerLeitungPrefix, prefixes)
-
-        if (prefixes.isNotEmpty()) {
-            loadLeitungsSuffixes(prefixes.first())
-        } else {
-            clearSpinner(spinnerLeitungSuffix)
-        }
-    }
-
-    private suspend fun loadLeitungsSuffixes(prefix: String) {
-        val leitungsbezeichnungen = withContext(Dispatchers.IO) { dao.getLeitungsbezeichnungen() }
-        val suffixes = sortNatural(
-            leitungsbezeichnungen
-                .mapNotNull { splitLeitungsbezeichnung(it) }
-                .filter { it.first == prefix }
-                .map { it.second }
-                .distinct()
-        )
-
-        setSpinnerItems(spinnerLeitungSuffix, suffixes)
-    }
-
-    private fun splitLeitungsbezeichnung(leitungsbezeichnung: String): Pair<String, String>? {
-        val value = leitungsbezeichnung.trim()
-        if (value.isBlank()) return null
-
-        val dotIndex = value.indexOf('.')
-        return if (dotIndex >= 0) {
-            value.substring(0, dotIndex) to value.substring(dotIndex + 1)
-        } else {
-            value to ""
-        }
-    }
-
-    private fun joinLeitungsbezeichnung(prefix: String, suffix: String): String {
-        return if (suffix.isBlank()) prefix else "$prefix.$suffix"
-    }
-
-    private fun sortNatural(items: Iterable<String>): List<String> {
-        return items.sortedWith(Comparator { first, second -> compareNaturalText(first, second) })
-    }
-
-    private fun compareNaturalText(first: String, second: String): Int {
-        var firstIndex = 0
-        var secondIndex = 0
-
-        while (firstIndex < first.length && secondIndex < second.length) {
-            val firstChar = first[firstIndex]
-            val secondChar = second[secondIndex]
-
-            if (firstChar.isDigit() && secondChar.isDigit()) {
-                val firstNumberStart = firstIndex
-                val secondNumberStart = secondIndex
-
-                while (firstIndex < first.length && first[firstIndex].isDigit()) firstIndex++
-                while (secondIndex < second.length && second[secondIndex].isDigit()) secondIndex++
-
-                val firstNumberRaw = first.substring(firstNumberStart, firstIndex)
-                val secondNumberRaw = second.substring(secondNumberStart, secondIndex)
-                val firstNumber = firstNumberRaw.trimStart('0').ifEmpty { "0" }
-                val secondNumber = secondNumberRaw.trimStart('0').ifEmpty { "0" }
-
-                val lengthCompare = firstNumber.length.compareTo(secondNumber.length)
-                if (lengthCompare != 0) return lengthCompare
-
-                val valueCompare = firstNumber.compareTo(secondNumber)
-                if (valueCompare != 0) return valueCompare
-
-                val rawLengthCompare = firstNumberRaw.length.compareTo(secondNumberRaw.length)
-                if (rawLengthCompare != 0) return rawLengthCompare
-            } else {
-                val charCompare = firstChar.lowercaseChar().compareTo(secondChar.lowercaseChar())
-                if (charCompare != 0) return charCompare
-
-                firstIndex++
-                secondIndex++
-            }
-        }
-
-        return first.length.compareTo(second.length)
-    }
-
-    private fun setSpinnerItems(spinner: Spinner, items: List<String>) {
-        val adapter = ArrayAdapter(this, R.layout.spinner_item, items)
-        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
-        spinner.adapter = adapter
-    }
-
-    private fun clearSpinner(spinner: Spinner) {
-        setSpinnerItems(spinner, emptyList())
-    }
-
-    private suspend fun searchStromkreis(etage: String, raum: String, verbraucher: String) {
-        val eintrag = withContext(Dispatchers.IO) {
-            dao.findEintrag(etage, raum, verbraucher)
-        }
-
-        if (eintrag == null) {
-            showNoStromkreisFound()
-        } else {
-            showStromkreisResult(eintrag)
-        }
-    }
-
-    private suspend fun searchVerbraucher(aktor: String, kanal: String) {
-        val eintraege = withContext(Dispatchers.IO) {
-            dao.findEintraegeByAktorKanal(aktor, kanal)
-        }
-
-        if (eintraege.isEmpty()) {
-            showNoVerbraucherFound()
-        } else {
-            showVerbraucherResult(eintraege)
-        }
-    }
-
-    private suspend fun searchRaeume(fi: String, ls: String) {
-        val eintraege = withContext(Dispatchers.IO) {
-            dao.findEintraegeByFiLs(fi, ls)
-        }
-
-        if (eintraege.isEmpty()) {
-            showNoRaeumeFound()
-        } else {
-            showRaumResult(eintraege)
-        }
-    }
-
-    private suspend fun searchLeitung(prefix: String, suffix: String) {
-        val leitungsbezeichnung = joinLeitungsbezeichnung(prefix, suffix)
-        val eintraege = withContext(Dispatchers.IO) {
-            dao.findEintraegeByLeitungsbezeichnung(leitungsbezeichnung)
-        }
-
-        if (eintraege.isEmpty()) {
-            showNoLeitungFound()
-        } else {
-            showLeitungResult(eintraege)
-        }
-    }
-
-    private fun String?.orDash(): String = if (this.isNullOrBlank()) "-" else this
-
-    private fun formatRoomWithNumber(eintrag: StromEintragEntity): String {
-        return buildString {
-            append(eintrag.raum.orDash())
-            if (!eintrag.raumnr.isNullOrBlank()) {
-                append(" (")
-                append(eintrag.raumnr)
-                append(")")
-            }
-        }
-    }
-
-    private fun clearStromkreisResult() {
-        valueFi.text = "-"
-        valueSicherung.text = "-"
-        valueAktor.text = "-"
-        valueKanal.text = "-"
-        valuePhase.text = "-"
-        valueAktiv.text = "-"
-        valueBlock.text = "-"
-        valueKlemme.text = "-"
-        valueLeitung.text = "-"
-        valueKabelart.text = "-"
-        valueRaumnr.text = "-"
-        valueBlatt.text = "-"
-        valueBemerkung.text = "-"
-        valueAktiv.setTextColor(aktivDefaultTextColors)
-        textErgebnis.text = "Bitte Auswahl treffen und auf Suchen tippen."
-    }
-
-    private fun showNoStromkreisFound() {
-        valueFi.text = "-"
-        valueSicherung.text = "-"
-        valueAktor.text = "-"
-        valueKanal.text = "-"
-        valuePhase.text = "-"
-        valueAktiv.text = "-"
-        valueBlock.text = "-"
-        valueKlemme.text = "-"
-        valueLeitung.text = "-"
-        valueKabelart.text = "-"
-        valueRaumnr.text = "-"
-        valueBlatt.text = "-"
-        valueBemerkung.text = "-"
-        valueAktiv.setTextColor(aktivDefaultTextColors)
-        textErgebnis.text = "Kein Stromkreis gefunden."
-    }
-
-    private fun showStromkreisResult(e: StromEintragEntity) {
-        valueFi.text = e.fi.orDash()
-        valueSicherung.text = e.ls.orDash()
-        valueAktor.text = e.aktor.orDash()
-        valueKanal.text = e.kanal.orDash()
-        valuePhase.text = e.phase.orDash()
-        valueBlock.text = e.klemmblock.orDash()
-        valueKlemme.text = e.klemme.orDash()
-        valueLeitung.text = e.leitungsbezeichnung.orDash()
-        valueKabelart.text = e.kabelart.orDash()
-        valueRaumnr.text = e.raumnr.orDash()
-        valueBlatt.text = e.blatt.orDash()
-        valueBemerkung.text = e.bemerkungen.orDash()
-
-        if (e.aktiv) {
-            valueAktiv.text = "Ja"
-            valueAktiv.setTextColor(aktivDefaultTextColors)
-        } else {
-            valueAktiv.text = "Nein"
-            valueAktiv.setTextColor(Color.RED)
-        }
-
-        textErgebnis.text = "Stromkreis gefunden."
-    }
-
-    private fun clearVerbraucherResult() {
-        textErgebnisVerbrauchersuche.text = "Bitte Auswahl treffen und auf Suchen tippen."
-        valueVerbraucherSucheErgebnis.text = "-"
-    }
-
-    private fun showNoVerbraucherFound() {
-        textErgebnisVerbrauchersuche.text = "Keine Verbraucher gefunden."
-        valueVerbraucherSucheErgebnis.text = "-"
-    }
-
-    private fun showVerbraucherResult(eintraege: List<StromEintragEntity>) {
-        textErgebnisVerbrauchersuche.text = "${eintraege.size} Treffer gefunden."
-
-        valueVerbraucherSucheErgebnis.text = eintraege.joinToString("\n") { eintrag ->
-            buildString {
-                append(eintrag.etage.orDash())
-                append(" | ")
-                append(formatRoomWithNumber(eintrag))
-                append(" | ")
-                append(eintrag.verbraucher.orDash())
-            }
-        }
-    }
-
-    private fun clearRaumResult() {
-        textErgebnisRaumsuche.text = "Bitte Auswahl treffen und auf Suchen tippen."
-        valueRaumSucheErgebnis.text = "-"
-    }
-
-    private fun showNoRaeumeFound() {
-        textErgebnisRaumsuche.text = "Keine Räume gefunden."
-        valueRaumSucheErgebnis.text = "-"
-    }
-
-    private fun showRaumResult(eintraege: List<StromEintragEntity>) {
-        val eindeutigeRaeume = eintraege
-            .distinctBy { "${it.etage}|${it.raumnr}|${it.raum}" }
-
-        textErgebnisRaumsuche.text = "${eindeutigeRaeume.size} Räume gefunden."
-
-        valueRaumSucheErgebnis.text = eindeutigeRaeume.joinToString("\n") { eintrag ->
-            buildString {
-                append(eintrag.etage.orDash())
-                append(" | ")
-                append(formatRoomWithNumber(eintrag))
-            }
-        }
-    }
-
-    private fun clearLeitungResult() {
-        textErgebnisLeitungssuche.text = "Bitte Auswahl treffen und auf Suchen tippen."
-        valueLeitungSucheErgebnis.text = "-"
-    }
-
-    private fun showNoLeitungFound() {
-        textErgebnisLeitungssuche.text = "Keine Einträge gefunden."
-        valueLeitungSucheErgebnis.text = "-"
-    }
-
-    private fun showLeitungResult(eintraege: List<StromEintragEntity>) {
-        textErgebnisLeitungssuche.text = "${eintraege.size} Treffer gefunden."
-
-        valueLeitungSucheErgebnis.text = eintraege.joinToString("\n") { eintrag ->
-            buildString {
-                append(eintrag.etage.orDash())
-                append(" | ")
-                append(formatRoomWithNumber(eintrag))
-                append(" | ")
-                append(eintrag.verbraucher.orDash())
-                append(" | ")
-                append(eintrag.phase.orDash())
-                append(", ")
-                append(eintrag.fi.orDash())
-                append(", ")
-                append(eintrag.ls.orDash())
-                append(" | ")
-                append(eintrag.aktor.orDash())
-                append(", ")
-                append(eintrag.kanal.orDash())
-                append(" | ")
-                append(eintrag.klemmblock.orDash())
-                append(", ")
-                append(eintrag.klemme.orDash())
-                append(" | ")
-                append(eintrag.kabelart.orDash())
-            }
-        }
+    private fun showInfoDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("StromkreisFinder")
+            .setMessage("Fachanwendungen-Desktop mit Stromkreissuche, Verbrauchersuche, Raumsuche und Leitungssuche. Weitere Module sind vorbereitet, aber noch deaktiviert.")
+            .setPositiveButton("OK", null)
+            .show()
     }
 }
