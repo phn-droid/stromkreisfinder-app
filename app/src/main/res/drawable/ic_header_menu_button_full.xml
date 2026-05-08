@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="90dp"
+    android:height="54dp"
+    android:viewportWidth="90"
+    android:viewportHeight="54">
+
+    <!-- Kompletter Button als Vektor, damit keine Stroke-/Text-Überlagerung entstehen kann. -->
+    <path
+        android:pathData="M27,1 L63,1 C77.36,1 89,12.64 89,27 C89,41.36 77.36,53 63,53 L27,53 C12.64,53 1,41.36 1,27 C1,12.64 12.64,1 27,1 Z"
+        android:fillColor="#00FFFFFF"
+        android:strokeColor="#7E7A82"
+        android:strokeWidth="2" />
+
+    <path
+        android:pathData="M37,20 L53,20"
+        android:fillColor="#00FFFFFF"
+        android:strokeColor="#6F50B5"
+        android:strokeLineCap="round"
+        android:strokeWidth="2.6" />
+    <path
+        android:pathData="M37,27 L53,27"
+        android:fillColor="#00FFFFFF"
+        android:strokeColor="#6F50B5"
+        android:strokeLineCap="round"
+        android:strokeWidth="2.6" />
+    <path
+        android:pathData="M37,34 L53,34"
+        android:fillColor="#00FFFFFF"
+        android:strokeColor="#6F50B5"
+        android:strokeLineCap="round"
+        android:strokeWidth="2.6" />
+</vector>
